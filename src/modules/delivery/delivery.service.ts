@@ -30,8 +30,8 @@ export class DeliveryService {
 
   // Estimate delivery fee based on distance
   async estimateDeliveryFee(userLat: number, userLng: number) {
-    const restLat = parseFloat(await this.getSetting("restaurant_lat", "41.311158"))
-    const restLng = parseFloat(await this.getSetting("restaurant_lng", "69.279737"))
+    const restLat = parseFloat(await this.getSetting("restaurant_lat", "38.838250"))
+    const restLng = parseFloat(await this.getSetting("restaurant_lng", "65.792222"))
     const baseFee = parseFloat(await this.getSetting("delivery_base_fee", "10000"))
     const perKm = parseFloat(await this.getSetting("delivery_per_km", "3000"))
 
