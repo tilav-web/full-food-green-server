@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build
+dist/
+build/
+
+# SQLite Database & Storage
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/*.db*
+!data/.gitkeep
+
+# Uploaded dynamic media & archives
+uploads/*
+!uploads/.gitkeep
+*.tar.gz
+*.zip
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test Coverage
+coverage/
+.nyc_output/
+
+# Editor & OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
