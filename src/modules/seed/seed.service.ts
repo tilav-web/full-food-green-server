@@ -33,9 +33,9 @@ export class SeedService implements OnApplicationBootstrap {
 
   private async seedSettings() {
     const defaultSettings = [
-      { key: "card_number", value: "8600 4912 3456 7890" },
-      { key: "card_holder", value: "FULL FOOD MCHJ" },
-      { key: "card_bank", value: "Kapitalbank" },
+      { key: "card_number", value: "9860 1001 2517 4530" },
+      { key: "card_holder", value: "SHAHRIZOD XALIMOV" },
+      { key: "card_bank", value: "HUMO" },
       { key: "restaurant_name", value: "Full Food" },
       { key: "restaurant_address", value: "Qarshi sh., Mustaqillik shoh ko'chasi" },
       { key: "restaurant_phone", value: "+998 90 000 00 00" },
