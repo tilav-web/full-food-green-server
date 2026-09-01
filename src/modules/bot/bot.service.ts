@@ -55,11 +55,23 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       })
-      return await res.json()
+      const json = await res.json()
+      if (!json.ok) {
+        this.logger.warn(`Telegram API [${method}] returned !ok: ${JSON.stringify(json)}`)
+      }
+      return json
     } catch (err) {
       this.logger.error(`Error calling Telegram API [${method}]: ${err}`)
       return null
     }
+  }
+
+  private escapeHtml(text: string): string {
+    return String(text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
   }
 
   private async startPolling() {
@@ -70,7 +82,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       try {
         const response = await this.callApi("getUpdates", {
           offset: this.offset,
-          timeout: 25,
+          timeout: 20,
         })
 
         if (response && response.ok && Array.isArray(response.result)) {
@@ -78,6 +90,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             this.offset = update.update_id + 1
             await this.handleUpdate(update)
           }
+        } else {
+          // Backoff slightly on errors or empty response
+          await new Promise((r) => setTimeout(r, 2000))
         }
       } catch (err) {
         this.logger.error(`Polling error: ${err}`)
@@ -89,7 +104,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private async handleUpdate(update: any) {
     if (!update.message) return
     const msg = update.message
-    const chatId = msg.chat.id
+    const chatId = msg.chat?.id
+    if (!chatId) return
     const text = msg.text || ""
 
     // 1. Handle /start [token]
@@ -101,9 +117,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         this.userPendingSessions.set(chatId, startParam)
       }
 
+      this.logger.log(`👤 /start received from chatId: ${chatId} (${msg.from?.first_name || ""})`)
+
+      const firstName = this.escapeHtml(msg.from?.first_name || "Mijoz")
+
       await this.callApi("sendMessage", {
         chat_id: chatId,
-        text: `Assalomu alaykum, <b>${msg.from.first_name || "Mijoz"}</b>!\n\n🥗 <b>Full Food</b> — sog'lom va mazali taomlar yetkazib berish xizmatiga xush kelibsiz!\n\nBuyurtma berish va profilingizni tasdiqlash uchun iltimos, pastdagi <b>"📱 Telefon raqamimni yuborish"</b> tugmasini bosing:`,
+        text: `Assalomu alaykum, <b>${firstName}</b>!\n\n🥗 <b>Full Food</b> — sog'lom va mazali taomlar yetkazib berish xizmatiga xush kelibsiz!\n\nBuyurtma berish va profilingizni tasdiqlash uchun iltimos, pastdagi <b>"📱 Telefon raqamimni yuborish"</b> tugmasini bosing:`,
         parse_mode: "HTML",
         reply_markup: {
           keyboard: [
@@ -129,17 +149,24 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         phone = "+" + phone
       }
 
-      const telegramId = String(contact.user_id || msg.from.id)
-      const fullName = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(" ") || "Telegram Foydalanuvchi"
-      const username = msg.from.username || undefined
+      const telegramId = String(contact.user_id || msg.from?.id || chatId)
+      const rawFullName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ") || contact.first_name || "Telegram Foydalanuvchi"
+      const username = msg.from?.username || undefined
+
+      this.logger.log(`📱 Contact shared from chatId: ${chatId}, phone: ${phone}, name: ${rawFullName}`)
 
       // Sync user with DB
-      const authUser = await this.authService.syncTelegramUser({
-        telegramId,
-        phone,
-        fullName,
-        username,
-      })
+      try {
+        await this.authService.syncTelegramUser({
+          telegramId,
+          phone,
+          fullName: rawFullName,
+          username,
+        })
+        this.logger.log(`✅ User saved to DB: tgId=${telegramId}, phone=${phone}`)
+      } catch (dbErr) {
+        this.logger.error(`Error saving user to DB: ${dbErr}`)
+      }
 
       // Check if user came from a Web session
       const pendingSessionToken = this.userPendingSessions.get(chatId)
@@ -149,7 +176,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         try {
           const sessionResult = await this.authService.completeWebAuthSession(
             pendingSessionToken,
-            { telegramId, phone, fullName, username }
+            { telegramId, phone, fullName: rawFullName, username }
           )
           webLoginUrl = sessionResult.webLoginUrl
           this.userPendingSessions.delete(chatId)
@@ -176,12 +203,34 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         ])
       }
 
+      const cleanName = this.escapeHtml(rawFullName)
+      const cleanPhone = this.escapeHtml(phone)
+
       await this.callApi("sendMessage", {
         chat_id: chatId,
-        text: `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Mijoz:</b> ${fullName}\n📱 <b>Telefon:</b> ${phone}\n\nEndi bemalol o'zingiz yoqtirgan taomlarni buyurtma qilishingiz mumkin:`,
+        text: `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Mijoz:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\nEndi bemalol o'zingiz yoqtirgan taomlarni buyurtma qilishingiz mumkin:`,
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: inlineButtons,
+        },
+      })
+      return
+    }
+
+    // 3. Fallback for any other text messages
+    if (text) {
+      await this.callApi("sendMessage", {
+        chat_id: chatId,
+        text: `Assalomu alaykum! Buyurtma berish uchun quyidagi tugma orqali taomlar menyusini ochishingiz mumkin:`,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🍽 Taomlar Menusini Ochish (Mini App)",
+                web_app: { url: this.webAppUrl },
+              },
+            ],
+          ],
         },
       })
     }
