@@ -21,7 +21,11 @@ import { BannersModule } from "./modules/banners/banners.module"
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: path.resolve(__dirname, "../../.env"),
+      envFilePath: [
+        path.resolve(process.cwd(), ".env"),
+        path.resolve(__dirname, "../.env"),
+        path.resolve(__dirname, "../../.env"),
+      ],
     }),
     DatabaseModule,
     SeedModule,

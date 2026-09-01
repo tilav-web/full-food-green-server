@@ -25,7 +25,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.botUsername = this.configService.get<string>("TELEGRAM_BOT_USERNAME") || "fullfoodbot"
     this.apiUrl = `https://api.telegram.org/bot${this.token}`
     this.webAppUrl = this.configService.get<string>("WEB_APP_URL") || this.configService.get<string>("WEBAPP_URL") || "https://fullfood.vercel.app"
-    this.ordersChannelId = this.configService.get<string>("TELEGRAM_ORDERS_CHANNEL_ID") || "@full_food_orders"
+    this.ordersChannelId = this.configService.get<string>("TELEGRAM_ORDERS_CHANNEL_ID") || "@fool_food_group"
   }
 
   async onModuleInit() {
@@ -39,6 +39,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         },
       })
       this.logger.log(`📱 Telegram Chat Menu Button configured -> ${this.webAppUrl}`)
+      this.logger.log(`📢 Telegram Orders Channel configured -> ${this.ordersChannelId}`)
     } catch (e) {
       this.logger.warn("Could not set chat menu button:", e)
     }
