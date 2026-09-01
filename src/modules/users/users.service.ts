@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from "@nestjs/common"
+import { Injectable, BadRequestException, NotFoundException } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
 import * as bcrypt from "bcryptjs"
@@ -91,5 +91,53 @@ export class UsersService {
 
   async deleteStaff(id: string) {
     return this.userRepo.delete(id)
+  }
+
+  async updateStaffCredentials(
+    id: string,
+    data: {
+      username?: string
+      fullName?: string
+      phone?: string
+      password?: string
+    }
+  ) {
+    const user = await this.userRepo.findOne({ where: { id } })
+    if (!user) {
+      throw new NotFoundException("Foydalanuvchi topilmadi")
+    }
+
+    if (data.username && data.username.trim() && data.username.trim() !== user.username) {
+      const existing = await this.userRepo.findOne({ where: { username: data.username.trim() } })
+      if (existing && existing.id !== id) {
+        throw new BadRequestException("Ushbu login band")
+      }
+      user.username = data.username.trim()
+    }
+
+    if (data.fullName && data.fullName.trim()) {
+      user.fullName = data.fullName.trim()
+    }
+
+    if (data.phone !== undefined) {
+      user.phone = data.phone?.trim() || null
+    }
+
+    if (data.password && data.password.trim()) {
+      if (data.password.trim().length < 4) {
+        throw new BadRequestException("Parol kamida 4 ta belgidan iborat bo'lishi kerak")
+      }
+      user.password = await bcrypt.hash(data.password.trim(), 8)
+    }
+
+    const saved = await this.userRepo.save(user)
+
+    return {
+      id: saved.id,
+      username: saved.username,
+      fullName: saved.fullName,
+      phone: saved.phone,
+      role: saved.role,
+    }
   }
 }

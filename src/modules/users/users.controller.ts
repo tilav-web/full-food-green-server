@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query } from "@nestjs/common"
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from "@nestjs/common"
 import { UsersService } from "./users.service"
 
 @Controller("users")
@@ -25,6 +25,14 @@ export class UsersController {
     @Body() body: { username: string; password: string; fullName: string; phone?: string }
   ) {
     return this.usersService.createCashier(body)
+  }
+
+  @Patch(":id/credentials")
+  async updateStaffCredentials(
+    @Param("id") id: string,
+    @Body() body: { username?: string; password?: string; fullName?: string; phone?: string }
+  ) {
+    return this.usersService.updateStaffCredentials(id, body)
   }
 
   @Delete(":id")
