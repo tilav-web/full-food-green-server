@@ -282,20 +282,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         .filter(Boolean)
         .join(" | ")
 
-      const text = `🔔 <b>YANGI BUYURTMA #${order.orderNumber}</b>\n\n` +
-        `👤 <b>Mijoz:</b> ${order.customerName || "Noma'lum"}\n` +
-        `📞 <b>Asosiy tel:</b> ${order.customerPhone || "-"}\n` +
+      const isDineIn = order.type === "DINE_IN"
+      const isPickup = order.type === "ONLINE_PICKUP"
+
+      const headerTitle = isDineIn
+        ? `🍽 <b>YANGI ZAL (KASSA) BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🍽 Zalda iste'mol (Kassa POS)\n\n`
+        : isPickup
+        ? `🚶 <b>YANGI OLIB KETISH BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚶 Olib ketish (Self-pickup)\n\n`
+        : `🔔 <b>YANGI TELEGRAM BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚗 Yetkazib berish (Telegram bot)\n\n`
+
+      const text = headerTitle +
+        `👤 <b>Mijoz:</b> ${order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum")}\n` +
+        (!isDineIn && order.customerPhone && order.customerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${order.customerPhone}\n` : "") +
         (order.extraPhone ? `📱 <b>Qo'shimcha tel:</b> ${order.extraPhone}\n` : "") +
-        (order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
-        (buildingInfo ? `${buildingInfo}\n` : "") +
+        (!isDineIn && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
+        (!isDineIn && buildingInfo ? `${buildingInfo}\n` : "") +
         (order.notes ? `💬 <b>Izoh:</b> ${order.notes}\n` : "") +
         `\n📋 <b>Taomlar tarkibi:</b>\n${itemsText}\n` +
-        (containersText ? `${containersText}\n` : "\n") +
+        (!isDineIn && containersText ? `${containersText}\n` : "\n") +
         `💰 <b>Taomlar:</b> ${Number(order.subtotal || 0).toLocaleString()} so'm\n` +
-        `🚗 <b>Yetkazish:</b> ${Number(order.deliveryFee || 0).toLocaleString()} so'm\n` +
+        (!isDineIn && Number(order.deliveryFee || 0) > 0 ? `🚗 <b>Yetkazish:</b> ${Number(order.deliveryFee || 0).toLocaleString()} so'm\n` : "") +
         `💵 <b>JAMI SUMMA:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
-        `💳 <b>To'lov usuli:</b> ${order.paymentMethod || "KARTA"}\n` +
-        `⏱ <b>Holat:</b> ${order.status}`
+        `💳 <b>To'lov usuli:</b> ${order.paymentMethod === "CASH" ? "NAQD PUL" : order.paymentMethod === "TERMINAL" ? "TERMINAL" : order.paymentMethod || "KARTA"}\n` +
+        `⏱ <b>Holat:</b> ${isDineIn ? "Oshxonada tayyorlanmoqda (Zal)" : order.status}`
 
       await this.callApi("sendMessage", {
         chat_id: channel,
