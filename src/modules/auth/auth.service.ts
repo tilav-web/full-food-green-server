@@ -216,7 +216,10 @@ export class AuthService {
     session.refreshToken = syncRes.refreshToken
     this.webSessions.set(token, session)
 
-    const webAppBaseUrl = this.configService.get<string>("WEBAPP_URL") || "http://localhost:5173"
+    const webAppBaseUrl =
+      this.configService.get<string>("WEB_APP_URL") ||
+      this.configService.get<string>("WEBAPP_URL") ||
+      "https://fullfood.vercel.app"
     const webLoginUrl = `${webAppBaseUrl}/?auth_token=${token}`
 
     return {
