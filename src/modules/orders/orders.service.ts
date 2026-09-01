@@ -215,8 +215,7 @@ export class OrdersService {
     return { order: savedOrder, dispatchInfo: result }
   }
 
-  // 6. Get orders list
-  async getOrders(query?: { status?: OrderStatus; userId?: string; search?: string }) {
+  async getOrders(query?: { status?: OrderStatus; userId?: string; phone?: string; search?: string }) {
     const qb = this.orderRepo
       .createQueryBuilder("order")
       .leftJoinAndSelect("order.items", "items")
@@ -225,8 +224,15 @@ export class OrdersService {
     if (query?.status) {
       qb.andWhere("order.status = :status", { status: query.status })
     }
-    if (query?.userId) {
+    if (query?.userId && query?.phone) {
+      qb.andWhere("(order.userId = :userId OR order.customerPhone = :phone)", {
+        userId: query.userId,
+        phone: query.phone,
+      })
+    } else if (query?.userId) {
       qb.andWhere("order.userId = :userId", { userId: query.userId })
+    } else if (query?.phone) {
+      qb.andWhere("order.customerPhone = :phone", { phone: query.phone })
     }
     if (query?.search) {
       qb.andWhere(

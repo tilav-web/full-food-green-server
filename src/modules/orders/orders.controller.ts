@@ -15,9 +15,10 @@ export class OrdersController {
   async getOrders(
     @Query("status") status?: OrderStatus,
     @Query("userId") userId?: string,
+    @Query("phone") phone?: string,
     @Query("search") search?: string
   ) {
-    return this.ordersService.getOrders({ status, userId, search })
+    return this.ordersService.getOrders({ status, userId, phone, search })
   }
 
   @Get(":id")
