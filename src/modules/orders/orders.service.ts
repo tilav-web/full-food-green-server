@@ -165,6 +165,9 @@ export class OrdersService {
 
     const savedOrder = await this.orderRepo.save(order)
 
+    // Notify Telegram channel on review result
+    this.botService.sendReceiptReviewedNotification(savedOrder, approved, rejectReason)
+
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)
 

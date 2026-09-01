@@ -320,22 +320,56 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `💳 <b>To'lov turi:</b> ${order.paymentMethod}\n` +
         `\n<i>Kassir/Admin iltimos, to'lovni tekshirib tasdiqlang.</i>`
 
-      if (receiptImageUrl && receiptImageUrl.startsWith("http")) {
-        await this.callApi("sendPhoto", {
+      const fullUrl = receiptImageUrl.startsWith("http")
+        ? receiptImageUrl
+        : `https://api.full-food.hotel-familyhouse.uz${receiptImageUrl.startsWith("/") ? "" : "/"}${receiptImageUrl}`
+
+      if (receiptImageUrl.toLowerCase().endsWith(".pdf")) {
+        await this.callApi("sendDocument", {
           chat_id: channel,
-          photo: receiptImageUrl,
+          document: fullUrl,
           caption,
           parse_mode: "HTML",
         })
       } else {
-        await this.callApi("sendMessage", {
+        const photoRes = await this.callApi("sendPhoto", {
           chat_id: channel,
-          text: `${caption}\n\n🖼 <b>Chek havolasi:</b> ${receiptImageUrl}`,
+          photo: fullUrl,
+          caption,
           parse_mode: "HTML",
         })
+
+        // If photo sending failed (e.g. invalid format), fallback to message with link
+        if (!photoRes || !photoRes.ok) {
+          await this.callApi("sendMessage", {
+            chat_id: channel,
+            text: `${caption}\n\n🖼 <b>Chek havolasi:</b> ${fullUrl}`,
+            parse_mode: "HTML",
+          })
+        }
       }
     } catch (err) {
       this.logger.error(`Error sending receipt notification to channel: ${err}`)
+    }
+  }
+
+  // Notify channel on receipt approval or rejection
+  async sendReceiptReviewedNotification(order: any, approved: boolean, reason?: string) {
+    try {
+      const channel = this.ordersChannelId
+      if (!channel) return
+
+      const text = approved
+        ? `✅ <b>TO'LOV TASDIQLANDI!</b>\n\n📌 <b>Buyurtma:</b> #${order.orderNumber}\n👤 <b>Mijoz:</b> ${order.customerName}\n💵 <b>Summa:</b> ${Number(order.totalAmount || 0).toLocaleString()} so'm\n\n👨‍🍳 <i>Buyurtma oshxonaga tayyorlash uchun yo'naltirildi!</i>`
+        : `❌ <b>TO'LOV RAD ETILDI!</b>\n\n📌 <b>Buyurtma:</b> #${order.orderNumber}\n👤 <b>Mijoz:</b> ${order.customerName}\n⚠️ <b>Sabab:</b> ${reason || "Chek mos kelmadi"}\n\n<i>Buyurtma bekor qilindi.</i>`
+
+      await this.callApi("sendMessage", {
+        chat_id: channel,
+        text,
+        parse_mode: "HTML",
+      })
+    } catch (err) {
+      this.logger.error(`Error sending receipt reviewed notification: ${err}`)
     }
   }
 }
