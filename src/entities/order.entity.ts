@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from "typeorm"
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn, Index } from "typeorm"
 import { OrderItem } from "./order-item.entity"
 
 export type OrderType = "ONLINE_DELIVERY" | "ONLINE_PICKUP" | "DINE_IN"
@@ -15,19 +15,25 @@ export type PaymentMethod = "CARD_TRANSFER" | "CASH" | "TERMINAL"
 export type PaymentStatus = "UNPAID" | "REVIEW" | "PAID" | "REJECTED"
 
 @Entity("orders")
+@Index(["status", "createdAt"])
+@Index(["type", "createdAt"])
+@Index(["userId", "createdAt"])
 export class Order {
   @PrimaryGeneratedColumn("uuid")
   id: string
 
+  @Index()
   @Column({ unique: true })
   orderNumber: string // #FF-1001
 
+  @Index()
   @Column({ nullable: true })
   userId: string
 
   @Column({ default: "Mijoz" })
   customerName: string
 
+  @Index()
   @Column({ nullable: true })
   customerPhone: string
 

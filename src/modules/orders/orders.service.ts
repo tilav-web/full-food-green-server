@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
-import { Order, OrderStatus, PaymentStatus } from "../../entities/order.entity"
+import { Order, OrderStatus, OrderType, PaymentStatus } from "../../entities/order.entity"
 import { OrderItem } from "../../entities/order-item.entity"
 import { InventoryService } from "../inventory/inventory.service"
 import { DeliveryService } from "../delivery/delivery.service"
@@ -17,7 +17,7 @@ export class OrdersService {
     private deliveryService: DeliveryService,
     private botService: BotService,
     private ordersGateway: OrdersGateway
-  ) {}
+  ) { }
 
   // Generate order number
   private async generateOrderNumber(): Promise<string> {
@@ -215,14 +215,24 @@ export class OrdersService {
     return { order: savedOrder, dispatchInfo: result }
   }
 
-  async getOrders(query?: { status?: OrderStatus; userId?: string; phone?: string; search?: string }) {
+  async getOrders(query?: {
+    status?: OrderStatus;
+    type?: OrderType;
+    userId?: string;
+    phone?: string;
+    search?: string;
+    limit?: number;
+    page?: number;
+  }) {
     const qb = this.orderRepo
       .createQueryBuilder("order")
       .leftJoinAndSelect("order.items", "items")
-      .orderBy("order.createdAt", "DESC")
 
     if (query?.status) {
       qb.andWhere("order.status = :status", { status: query.status })
+    }
+    if (query?.type) {
+      qb.andWhere("order.type = :type", { type: query.type })
     }
     if (query?.userId && query?.phone) {
       qb.andWhere("(order.userId = :userId OR order.customerPhone = :phone)", {
@@ -239,6 +249,27 @@ export class OrdersService {
         "(order.orderNumber LIKE :s OR order.customerPhone LIKE :s OR order.customerName LIKE :s)",
         { s: `%${query.search}%` }
       )
+    }
+
+    // Priority sorting: PAYMENT_REVIEW -> PREPARING -> DELIVERING -> PENDING_PAYMENT -> COMPLETED -> CANCELLED
+    qb.orderBy(`
+      CASE order.status
+        WHEN 'PAYMENT_REVIEW' THEN 1
+        WHEN 'PREPARING' THEN 2
+        WHEN 'DELIVERING' THEN 3
+        WHEN 'PENDING_PAYMENT' THEN 4
+        WHEN 'COMPLETED' THEN 5
+        WHEN 'CANCELLED' THEN 6
+        ELSE 7
+      END
+    `, "ASC")
+      .addOrderBy("order.createdAt", "DESC")
+
+    if (query?.limit) {
+      const take = Number(query.limit)
+      const page = Number(query.page) || 1
+      const skip = (page - 1) * take
+      qb.take(take).skip(skip)
     }
 
     return qb.getMany()

@@ -14,11 +14,14 @@ export class OrdersController {
   @Get()
   async getOrders(
     @Query("status") status?: OrderStatus,
+    @Query("type") type?: any,
     @Query("userId") userId?: string,
     @Query("phone") phone?: string,
-    @Query("search") search?: string
+    @Query("search") search?: string,
+    @Query("limit") limit?: number,
+    @Query("page") page?: number
   ) {
-    return this.ordersService.getOrders({ status, userId, phone, search })
+    return this.ordersService.getOrders({ status, type, userId, phone, search, limit, page })
   }
 
   @Get(":id")
