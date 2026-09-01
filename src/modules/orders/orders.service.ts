@@ -251,19 +251,7 @@ export class OrdersService {
       )
     }
 
-    // Priority sorting: PAYMENT_REVIEW -> PREPARING -> DELIVERING -> PENDING_PAYMENT -> COMPLETED -> CANCELLED
-    qb.orderBy(`
-      CASE order.status
-        WHEN 'PAYMENT_REVIEW' THEN 1
-        WHEN 'PREPARING' THEN 2
-        WHEN 'DELIVERING' THEN 3
-        WHEN 'PENDING_PAYMENT' THEN 4
-        WHEN 'COMPLETED' THEN 5
-        WHEN 'CANCELLED' THEN 6
-        ELSE 7
-      END
-    `, "ASC")
-      .addOrderBy("order.createdAt", "DESC")
+    qb.orderBy("order.createdAt", "DESC")
 
     if (query?.limit) {
       const take = Number(query.limit)
@@ -272,7 +260,23 @@ export class OrdersService {
       qb.take(take).skip(skip)
     }
 
-    return qb.getMany()
+    const orders = await qb.getMany()
+
+    const STATUS_PRIORITY: Record<string, number> = {
+      PAYMENT_REVIEW: 1,
+      PREPARING: 2,
+      DELIVERING: 3,
+      PENDING_PAYMENT: 4,
+      COMPLETED: 5,
+      CANCELLED: 6,
+    }
+
+    return orders.sort((a, b) => {
+      const prioA = STATUS_PRIORITY[a.status] || 99
+      const prioB = STATUS_PRIORITY[b.status] || 99
+      if (prioA !== prioB) return prioA - prioB
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
   }
 
   async getOrderById(id: string) {
