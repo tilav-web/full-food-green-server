@@ -3,10 +3,14 @@ import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
 import * as bcrypt from "bcryptjs"
 import { User, UserRole } from "../../entities/user.entity"
+import { BalanceTransaction, BalanceTransactionType } from "../../entities/balance-transaction.entity"
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectRepository(User) private userRepo: Repository<User>) {}
+  constructor(
+    @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(BalanceTransaction) private balanceTxRepo: Repository<BalanceTransaction>,
+  ) {}
 
   async findAllPaginated(params: {
     page?: number
@@ -155,4 +159,70 @@ export class UsersService {
       role: saved.role,
     }
   }
+
+  async findById(id: string) {
+    const user = await this.userRepo.findOne({ where: { id } })
+    if (!user) throw new NotFoundException("Foydalanuvchi topilmadi")
+    return user
+  }
+
+  async adjustBalance(
+    userId: string,
+    dto: {
+      amount: number
+      type: BalanceTransactionType
+      note?: string
+      performedBy?: string
+      orderId?: string
+    }
+  ) {
+    const user = await this.userRepo.findOne({ where: { id: userId } })
+    if (!user) {
+      throw new NotFoundException("Foydalanuvchi topilmadi")
+    }
+
+    const currentBalance = Number(user.balance || 0)
+    const newBalance = Math.round((currentBalance + Number(dto.amount)) * 100) / 100
+
+    if (newBalance < 0) {
+      throw new BadRequestException(
+        `Balansda yetarli mablag' mavjud emas. Joriy balans: ${currentBalance.toLocaleString()} so'm`
+      )
+    }
+
+    user.balance = newBalance
+    await this.userRepo.save(user)
+
+    const tx = this.balanceTxRepo.create({
+      userId,
+      amount: Number(dto.amount),
+      balanceBefore: currentBalance,
+      balanceAfter: newBalance,
+      type: dto.type,
+      note: dto.note,
+      performedBy: dto.performedBy || "Tizim",
+      orderId: dto.orderId,
+    })
+
+    const savedTx = await this.balanceTxRepo.save(tx)
+
+    return {
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        phone: user.phone,
+        balance: user.balance,
+      },
+      transaction: savedTx,
+    }
+  }
+
+  async getBalanceHistory(userId: string) {
+    return this.balanceTxRepo.find({
+      where: { userId },
+      order: { createdAt: "DESC" },
+      take: 50,
+    })
+  }
 }
+

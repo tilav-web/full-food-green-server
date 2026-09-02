@@ -7,6 +7,7 @@ import { Product } from "../../entities/product.entity"
 import { InventoryService } from "../inventory/inventory.service"
 import { DeliveryService } from "../delivery/delivery.service"
 import { BotService } from "../bot/bot.service"
+import { UsersService } from "../users/users.service"
 import { OrdersGateway } from "./orders.gateway"
 
 @Injectable()
@@ -18,7 +19,8 @@ export class OrdersService {
     private inventoryService: InventoryService,
     private deliveryService: DeliveryService,
     private botService: BotService,
-    private ordersGateway: OrdersGateway
+    private ordersGateway: OrdersGateway,
+    private usersService: UsersService
   ) { }
 
   // Generate order number
@@ -37,7 +39,7 @@ export class OrdersService {
     floor?: string
     apartment?: string
     type?: "ONLINE_DELIVERY" | "ONLINE_PICKUP" | "DINE_IN"
-    paymentMethod?: "CARD_TRANSFER" | "CASH" | "TERMINAL"
+    paymentMethod?: "CARD_TRANSFER" | "CASH" | "TERMINAL" | "BALANCE"
     address?: string
     latitude?: number
     longitude?: number
@@ -110,6 +112,42 @@ export class OrdersService {
     // User pays only for food + packaging. Delivery fee is paid directly to taxi driver
     const totalAmount = subtotal + packagingFee
 
+    let isPaidFromBalance = false
+    let paymentStatus: PaymentStatus = data.type === "DINE_IN" ? "PAID" : "UNPAID"
+    let status: OrderStatus = data.type === "DINE_IN" ? "PREPARING" : "PENDING_PAYMENT"
+
+    if (data.paymentMethod === "BALANCE") {
+      if (!data.userId) {
+        throw new BadRequestException("Balans orqali to'lov uchun mijoz tanlanishi shart")
+      }
+      const user = await this.usersService.findById(data.userId)
+      const currentBal = Number(user.balance || 0)
+      if (currentBal < totalAmount) {
+        throw new BadRequestException(
+          `Mijoz hisobida yetarli mablag' mavjud emas. Balans: ${currentBal.toLocaleString()} so'm, talab qilinadi: ${totalAmount.toLocaleString()} so'm`
+        )
+      }
+
+      // If DINE_IN (POS order created directly by cashier), deduct immediately!
+      if (data.type === "DINE_IN") {
+        await this.usersService.adjustBalance(data.userId, {
+          amount: -totalAmount,
+          type: "ORDER_PAYMENT",
+          orderId: orderNumber,
+          note: `Zal POS buyurtma #${orderNumber} uchun to'lov`,
+          performedBy: "Kassir",
+        })
+        isPaidFromBalance = true
+        paymentStatus = "PAID"
+        status = "PREPARING"
+      } else {
+        // Online order: created with UNPAID, cashier reviews and deducts upon confirmation
+        isPaidFromBalance = false
+        paymentStatus = "UNPAID"
+        status = "PENDING_PAYMENT"
+      }
+    }
+
     const order = this.orderRepo.create({
       orderNumber,
       userId: data.userId,
@@ -120,7 +158,7 @@ export class OrdersService {
       floor: data.floor,
       apartment: data.apartment,
       type: data.type || "ONLINE_DELIVERY",
-      status: data.type === "DINE_IN" ? "PREPARING" : "PENDING_PAYMENT",
+      status,
       subtotal,
       deliveryFee,
       packagingFee,
@@ -130,7 +168,8 @@ export class OrdersService {
       longitude: data.longitude,
       distanceKm: data.distanceKm || 0,
       paymentMethod: data.paymentMethod || "CARD_TRANSFER",
-      paymentStatus: data.type === "DINE_IN" ? "PAID" : "UNPAID",
+      paymentStatus,
+      isPaidFromBalance,
       notes: data.notes,
       containersJson: data.containersJson,
       items: orderItems,
@@ -186,6 +225,61 @@ export class OrdersService {
 
     // Notify Telegram channel on review result
     this.botService.sendReceiptReviewedNotification(savedOrder, approved, rejectReason)
+
+    // Emit Real-Time WebSocket event
+    this.ordersGateway.emitOrderUpdated(savedOrder)
+
+    return savedOrder
+  }
+
+  // 3.5 Confirm Balance Payment (Cashier flow)
+  async confirmBalancePayment(orderId: string, performedBy?: string) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId }, relations: ["items"] })
+    if (!order) throw new NotFoundException("Buyurtma topilmadi")
+
+    if (order.isPaidFromBalance) {
+      throw new BadRequestException("Ushbu buyurtma uchun balansdan allaqachon to'langan")
+    }
+
+    let targetUserId = order.userId
+    if (!targetUserId && order.customerPhone) {
+      const u = await this.usersService.findAllPaginated({ search: order.customerPhone, limit: 1 })
+      if (u.data && u.data.length > 0) {
+        targetUserId = u.data[0].id
+      }
+    }
+
+    if (!targetUserId) {
+      throw new BadRequestException("Buyurtmachi foydalanuvchi hisobi topilmadi")
+    }
+
+    const user = await this.usersService.findById(targetUserId)
+    const currentBalance = Number(user.balance || 0)
+    if (currentBalance < order.totalAmount) {
+      throw new BadRequestException(
+        `Mijoz balansida yetarli mablag' mavjud emas. Balans: ${currentBalance.toLocaleString()} so'm, buyurtma: ${order.totalAmount.toLocaleString()} so'm`
+      )
+    }
+
+    // Deduct from balance
+    await this.usersService.adjustBalance(targetUserId, {
+      amount: -order.totalAmount,
+      type: "ORDER_PAYMENT",
+      orderId: order.orderNumber,
+      note: `Buyurtma #${order.orderNumber} uchun to'lov`,
+      performedBy: performedBy || "Kassir",
+    })
+
+    order.userId = targetUserId
+    order.isPaidFromBalance = true
+    order.paymentMethod = "BALANCE"
+    order.paymentStatus = "PAID"
+    order.status = "PREPARING"
+
+    const savedOrder = await this.orderRepo.save(order)
+
+    // Notify Telegram bot channel
+    this.botService.sendOrderNotification(savedOrder)
 
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)

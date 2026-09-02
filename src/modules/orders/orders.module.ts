@@ -8,6 +8,7 @@ import { Product } from "../../entities/product.entity"
 import { InventoryModule } from "../inventory/inventory.module"
 import { DeliveryModule } from "../delivery/delivery.module"
 import { BotModule } from "../bot/bot.module"
+import { UsersModule } from "../users/users.module"
 
 import { OrdersGateway } from "./orders.gateway"
 
@@ -17,6 +18,7 @@ import { OrdersGateway } from "./orders.gateway"
     InventoryModule,
     DeliveryModule,
     BotModule,
+    UsersModule,
   ],
   providers: [OrdersService, OrdersGateway],
   controllers: [OrdersController],

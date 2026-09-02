@@ -13,6 +13,7 @@ import { Order } from "../entities/order.entity"
 import { OrderItem } from "../entities/order-item.entity"
 import { Setting } from "../entities/setting.entity"
 import { Banner } from "../entities/banner.entity"
+import { BalanceTransaction } from "../entities/balance-transaction.entity"
 
 const dbDir = path.resolve(__dirname, "../../data")
 if (!fs.existsSync(dbDir)) {
@@ -24,7 +25,7 @@ if (!fs.existsSync(dbDir)) {
     TypeOrmModule.forRoot({
       type: "sqlite",
       database: path.join(dbDir, "fullfood.sqlite"),
-      entities: [User, Category, Product, Combo, Unit, InventoryLog, Order, OrderItem, Setting, Banner],
+      entities: [User, Category, Product, Combo, Unit, InventoryLog, Order, OrderItem, Setting, Banner, BalanceTransaction],
       synchronize: true, // Auto create tables in development
       logging: false, // Low memory: disable query logs
     }),
@@ -105,6 +106,28 @@ export class DatabaseModule implements OnModuleInit {
       } catch (_) {}
       try {
         await this.dataSource.query("ALTER TABLE users ADD COLUMN lastBotActivityAt DATETIME;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE orders ADD COLUMN isPaidFromBalance BOOLEAN DEFAULT 0;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query(`
+          CREATE TABLE IF NOT EXISTS balance_transactions (
+            id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
+            amount REAL NOT NULL,
+            balanceBefore REAL NOT NULL,
+            balanceAfter REAL NOT NULL,
+            type TEXT NOT NULL,
+            orderId TEXT,
+            note TEXT,
+            performedBy TEXT,
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+        `)
       } catch (_) {}
     } catch (err) {
       console.warn("Could not apply SQLite pragmas or column updates:", err)

@@ -25,6 +25,9 @@ export class User {
   @Column({ nullable: true, select: false })
   password?: string
 
+  @Column({ type: "real", default: 0 })
+  balance: number
+
   @Column({ type: "boolean", default: true })
   isBotActive: boolean
 

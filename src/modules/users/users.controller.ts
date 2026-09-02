@@ -40,4 +40,35 @@ export class UsersController {
   async deleteStaff(@Param("id") id: string) {
     return this.usersService.deleteStaff(id)
   }
+
+  @Get(":id")
+  async getUserById(@Param("id") id: string) {
+    return this.usersService.findById(id)
+  }
+
+  @Post(":id/balance")
+  async adjustBalance(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      amount: number
+      type?: any
+      note?: string
+      performedBy?: string
+      orderId?: string
+    }
+  ) {
+    return this.usersService.adjustBalance(id, {
+      amount: body.amount,
+      type: body.type || (body.amount >= 0 ? "DEPOSIT" : "MANUAL_ADJUSTMENT"),
+      note: body.note,
+      performedBy: body.performedBy || "Super Admin",
+      orderId: body.orderId,
+    })
+  }
+
+  @Get(":id/balance-history")
+  async getBalanceHistory(@Param("id") id: string) {
+    return this.usersService.getBalanceHistory(id)
+  }
 }

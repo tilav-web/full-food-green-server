@@ -42,6 +42,14 @@ export class OrdersController {
     return this.ordersService.reviewReceipt(id, body.approved, body.rejectReason)
   }
 
+  @Post(":id/confirm-balance-payment")
+  async confirmBalancePayment(
+    @Param("id") id: string,
+    @Body() body: { performedBy?: string }
+  ) {
+    return this.ordersService.confirmBalancePayment(id, body?.performedBy)
+  }
+
   @Patch(":id/status")
   async updateStatus(@Param("id") id: string, @Body() body: { status: OrderStatus }) {
     return this.ordersService.updateStatus(id, body.status)

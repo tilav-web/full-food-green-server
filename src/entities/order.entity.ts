@@ -11,7 +11,7 @@ export type OrderStatus =
   | "COMPLETED"
   | "CANCELLED"
 
-export type PaymentMethod = "CARD_TRANSFER" | "CASH" | "TERMINAL"
+export type PaymentMethod = "CARD_TRANSFER" | "CASH" | "TERMINAL" | "BALANCE"
 export type PaymentStatus = "UNPAID" | "REVIEW" | "PAID" | "REJECTED"
 
 @Entity("orders")
@@ -86,6 +86,9 @@ export class Order {
 
   @Column({ type: "text", default: "UNPAID" })
   paymentStatus: PaymentStatus
+
+  @Column({ type: "boolean", default: false })
+  isPaidFromBalance: boolean
 
   @Column({ nullable: true })
   receiptImageUrl: string // User yuklagan to'lov cheki skrinshoti
