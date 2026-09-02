@@ -65,6 +65,31 @@ export class DatabaseModule implements OnModuleInit {
       try {
         await this.dataSource.query("ALTER TABLE products ADD COLUMN soldCount INTEGER DEFAULT 0;")
       } catch (_) {}
+      try {
+        await this.dataSource.query(`
+          UPDATE products 
+          SET packagingLevel = 0 
+          WHERE categoryId IN (SELECT id FROM categories WHERE LOWER(name) LIKE '%ichimlik%' OR LOWER(slug) LIKE '%ichimlik%')
+             OR LOWER(name) LIKE '%cappuccino%'
+             OR LOWER(name) LIKE '%latte%'
+             OR LOWER(name) LIKE '%americano%'
+             OR LOWER(name) LIKE '%espresso%'
+             OR LOWER(name) LIKE '%fanta%'
+             OR LOWER(name) LIKE '%cola%'
+             OR LOWER(name) LIKE '%sprite%'
+             OR LOWER(name) LIKE '%adrenalin%'
+             OR LOWER(name) LIKE '%flash%'
+             OR LOWER(name) LIKE '%red bull%'
+             OR LOWER(name) LIKE '%suv%'
+             OR LOWER(name) LIKE '%choy%'
+             OR LOWER(name) LIKE '%sharbat%'
+             OR LOWER(name) LIKE '%sok%'
+             OR LOWER(name) LIKE '%fuse tea%'
+             OR LOWER(name) LIKE '%ayron%'
+             OR LOWER(name) LIKE '%mojito%'
+             OR LOWER(name) LIKE '%pepsi%';
+        `)
+      } catch (_) {}
     } catch (err) {
       console.warn("Could not apply SQLite pragmas or column updates:", err)
     }

@@ -291,6 +291,43 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         ? `🚶 <b>YANGI OLIB KETISH BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚶 Olib ketish (Self-pickup)\n\n`
         : `🔔 <b>YANGI TELEGRAM BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚗 Yetkazib berish (Telegram bot)\n\n`
 
+      const formatPaymentMethod = (method?: string): string => {
+        if (!method) return "Karta orqali o'tkazma"
+        switch (method.toUpperCase()) {
+          case "CARD_TRANSFER":
+            return "Karta orqali o'tkazma"
+          case "CASH":
+            return "Naqd pul"
+          case "TERMINAL":
+            return "Karta orqali terminalda"
+          default:
+            return method
+        }
+      }
+
+      const formatOrderStatus = (status?: string): string => {
+        if (isDineIn) return "Oshxonada tayyorlanmoqda (Zal)"
+        if (!status) return "Qabul qilindi"
+        switch (status.toUpperCase()) {
+          case "PENDING_PAYMENT":
+            return "To'lov / Chek kutilmoqda"
+          case "PAYMENT_REVIEW":
+            return "Chek tekshirilmoqda"
+          case "PREPARING":
+            return "Oshxonada tayyorlanmoqda"
+          case "READY_FOR_DELIVERY":
+            return "Yetkazishga tayyor"
+          case "DELIVERING":
+            return "Yo'lda (Yetkazilmoqda)"
+          case "COMPLETED":
+            return "Yetkazildi (Yakunlandi)"
+          case "CANCELLED":
+            return "Bekor qilindi"
+          default:
+            return status
+        }
+      }
+
       const text = headerTitle +
         `👤 <b>Mijoz:</b> ${order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum")}\n` +
         (!isDineIn && order.customerPhone && order.customerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${order.customerPhone}\n` : "") +
@@ -301,11 +338,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `\n📋 <b>Taomlar tarkibi:</b>\n${itemsText}\n` +
         (!isDineIn && containersText ? `${containersText}\n` : "\n") +
         `💰 <b>Taomlar:</b> ${Number(order.subtotal || 0).toLocaleString()} so'm\n` +
-        (Number(order.packagingFee || 0) > 0 ? `📦 <b>Qadoqlash idishlari:</b> ${Number(order.packagingFee || 0).toLocaleString()} so'm\n` : "") +
-        (!isDineIn && Number(order.deliveryFee || 0) > 0 ? `🚗 <b>Taxminiy yetkazish (taksiga):</b> ~${Number(order.deliveryFee || 0).toLocaleString()} so'm\n` : "") +
+        (Number(order.packagingFee || 0) > 0 ? `📦 <b>Qadoqlash (idishlar):</b> ${Number(order.packagingFee || 0).toLocaleString()} so'm\n` : "") +
+        (!isDineIn && Number(order.deliveryFee || 0) > 0 ? `🚗 <b>Taxminiy yetkazish (taksiga):</b> ~${Number(order.deliveryFee || 0).toLocaleString()} so'm (Alohida taksiga to'lanadi)\n` : "") +
         `💵 <b>JAMI RESTORAN TO'LOVI:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
-        `💳 <b>To'lov usuli:</b> ${order.paymentMethod === "CASH" ? "NAQD PUL" : order.paymentMethod === "TERMINAL" ? "TERMINAL" : order.paymentMethod || "KARTA"}\n` +
-        `⏱ <b>Holat:</b> ${isDineIn ? "Oshxonada tayyorlanmoqda (Zal)" : order.status}`
+        `💳 <b>To'lov usuli:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
+        `⏱ <b>Holat:</b> ${formatOrderStatus(order.status)}`
 
       await this.callApi("sendMessage", {
         chat_id: channel,
@@ -328,7 +365,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `👤 <b>Mijoz:</b> ${order.customerName} (${order.customerPhone})\n` +
         (order.extraPhone ? `📱 <b>Qo'shimcha tel:</b> ${order.extraPhone}\n` : "") +
         `💵 <b>To'lov summasi:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
-        `💳 <b>To'lov turi:</b> ${order.paymentMethod}\n` +
+        `💳 <b>To'lov turi:</b> ${order.paymentMethod === "CARD_TRANSFER" ? "Karta orqali o'tkazma" : order.paymentMethod === "CASH" ? "Naqd pul" : order.paymentMethod === "TERMINAL" ? "Terminal" : order.paymentMethod || "Karta"}\n` +
         `\n<i>Kassir/Admin iltimos, to'lovni tekshirib tasdiqlang.</i>`
 
       const fullUrl = receiptImageUrl.startsWith("http")
