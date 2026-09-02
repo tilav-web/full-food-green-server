@@ -190,14 +190,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`📱 Contact shared from chatId: ${chatId}, phone: ${phone}, name: ${rawFullName}`)
 
       // Sync user with DB
+      let syncedRole = "USER"
       try {
-        await this.authService.syncTelegramUser({
+        const syncRes = await this.authService.syncTelegramUser({
           telegramId,
           phone,
           fullName: rawFullName,
           username,
         })
-        this.logger.log(`✅ User saved to DB: tgId=${telegramId}, phone=${phone}`)
+        if (syncRes?.user?.role) {
+          syncedRole = syncRes.user.role
+        }
+        this.logger.log(`✅ User saved to DB: tgId=${telegramId}, phone=${phone}, role=${syncedRole}`)
       } catch (dbErr) {
         this.logger.error(`Error saving user to DB: ${dbErr}`)
       }
@@ -219,14 +223,49 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const inlineButtons: any[] = [
-        [
+      const cleanName = this.escapeHtml(rawFullName)
+      const cleanPhone = this.escapeHtml(phone)
+
+      let messageText = ""
+      const inlineButtons: any[] = []
+
+      if (syncedRole === "ADMIN") {
+        messageText = `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Super Admin:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\n👑 <b>Super Admin Boshqaruv Paneliga</b> xush kelibsiz! Quyidagi tugma orqali boshqaruv panelini ochishingiz mumkin:`
+        inlineButtons.push([
+          {
+            text: "👑 Super Admin Paneli (Mini App)",
+            web_app: { url: this.webAppUrl },
+          },
+        ])
+        inlineButtons.push([
+          {
+            text: "🍽 Mijozlar Menyusini Ko'rish",
+            web_app: { url: `${this.webAppUrl}/menu?viewMenu=true` },
+          },
+        ])
+      } else if (syncedRole === "CASHIER") {
+        messageText = `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Kassir:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\n🧾 <b>Kassa POS Tizimiga</b> xush kelibsiz! Quyidagi tugma orqali buyurtmalarni qabul qilishingiz mumkin:`
+        inlineButtons.push([
+          {
+            text: "🧾 Kassa POS Paneli (Mini App)",
+            web_app: { url: this.webAppUrl },
+          },
+        ])
+        inlineButtons.push([
+          {
+            text: "🍽 Mijozlar Menyusini Ko'rish",
+            web_app: { url: `${this.webAppUrl}/menu?viewMenu=true` },
+          },
+        ])
+      } else {
+        messageText = `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Mijoz:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\nEndi bemalol o'zingiz yoqtirgan taomlarni buyurtma qilishingiz mumkin:`
+        inlineButtons.push([
           {
             text: "🍽 Taomlar Menusini Ochish (Mini App)",
             web_app: { url: this.webAppUrl },
           },
-        ],
-      ]
+        ])
+      }
 
       if (webLoginUrl) {
         inlineButtons.push([
@@ -237,12 +276,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         ])
       }
 
-      const cleanName = this.escapeHtml(rawFullName)
-      const cleanPhone = this.escapeHtml(phone)
-
       await this.callApi("sendMessage", {
         chat_id: chatId,
-        text: `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Mijoz:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\nEndi bemalol o'zingiz yoqtirgan taomlarni buyurtma qilishingiz mumkin:`,
+        text: messageText,
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: inlineButtons,

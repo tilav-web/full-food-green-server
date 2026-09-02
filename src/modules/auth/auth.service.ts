@@ -15,6 +15,33 @@ export interface WebAuthSession {
   refreshToken?: string
 }
 
+function getPhoneCandidates(phone?: string | null): string[] {
+  if (!phone) return []
+  const clean = phone.trim()
+  const digits = clean.replace(/\D/g, "")
+  const candidates = new Set<string>()
+
+  if (clean) candidates.add(clean)
+  if (clean.startsWith("+")) {
+    candidates.add(clean.substring(1))
+  } else {
+    candidates.add(`+${clean}`)
+  }
+  if (digits) {
+    candidates.add(digits)
+    candidates.add(`+${digits}`)
+    if (digits.length === 9) {
+      candidates.add(`+998${digits}`)
+      candidates.add(`998${digits}`)
+    } else if (digits.length === 12 && digits.startsWith("998")) {
+      candidates.add(digits.substring(3))
+      candidates.add(`+${digits}`)
+      candidates.add(digits)
+    }
+  }
+  return Array.from(candidates).filter(Boolean)
+}
+
 @Injectable()
 export class AuthService {
   // In-memory low-RAM session map (auto cleaned)
@@ -107,14 +134,70 @@ export class AuthService {
     phone?: string
     initData?: string
   }) {
+    const tgIdStr = String(telegramData.telegramId)
     let user = await this.userRepo.findOne({
-      where: { telegramId: String(telegramData.telegramId) },
+      where: { telegramId: tgIdStr },
     })
 
+    // 1. If user is not found by telegramId, but phone is provided:
+    if (!user && telegramData.phone) {
+      const candidates = getPhoneCandidates(telegramData.phone)
+      if (candidates.length > 0) {
+        user = await this.userRepo
+          .createQueryBuilder("user")
+          .where("user.phone IN (:...candidates)", { candidates })
+          .getOne()
+
+        if (user) {
+          user.telegramId = tgIdStr
+          if (telegramData.username && !user.username) {
+            user.username = telegramData.username
+          }
+          if (telegramData.fullName && (!user.fullName || user.fullName === "Telegram Mijoz")) {
+            user.fullName = telegramData.fullName
+          }
+          await this.userRepo.save(user)
+        }
+      }
+    }
+
+    // 2. If user was found by telegramId, but role is 'USER' and phone is now provided:
+    // Check if an ADMIN or CASHIER exists with this phone who hasn't linked telegramId yet
+    if (user && user.role === "USER" && telegramData.phone) {
+      const candidates = getPhoneCandidates(telegramData.phone)
+      if (candidates.length > 0) {
+        const existingStaff = await this.userRepo
+          .createQueryBuilder("user")
+          .where("user.phone IN (:...candidates) AND user.id != :currId", {
+            candidates,
+            currId: user.id,
+          })
+          .andWhere("user.role IN ('ADMIN', 'CASHIER')")
+          .getOne()
+
+        if (existingStaff) {
+          existingStaff.telegramId = tgIdStr
+          if (telegramData.username) existingStaff.username = telegramData.username
+          if (telegramData.fullName && (!existingStaff.fullName || existingStaff.fullName === "Super Admin")) {
+            existingStaff.fullName = telegramData.fullName
+          }
+          await this.userRepo.save(existingStaff)
+
+          // Remove the temporary duplicate placeholder
+          try {
+            await this.userRepo.delete(user.id)
+          } catch (_) {}
+
+          user = existingStaff
+        }
+      }
+    }
+
+    // 3. If still no user exists at all, create a new customer (USER)
     if (!user) {
       user = this.userRepo.create({
-        telegramId: String(telegramData.telegramId),
-        username: telegramData.username || `tg_${telegramData.telegramId}`,
+        telegramId: tgIdStr,
+        username: telegramData.username || `tg_${tgIdStr}`,
         fullName: telegramData.fullName || "Telegram Mijoz",
         phone: telegramData.phone,
         role: "USER" as UserRole,
@@ -122,12 +205,16 @@ export class AuthService {
       user = await this.userRepo.save(user)
     } else {
       let shouldUpdate = false
-      if (telegramData.fullName && user.fullName !== telegramData.fullName) {
+      if (telegramData.fullName && user.fullName !== telegramData.fullName && user.role === "USER") {
         user.fullName = telegramData.fullName
         shouldUpdate = true
       }
       if (telegramData.phone && (!user.phone || user.phone !== telegramData.phone)) {
         user.phone = telegramData.phone
+        shouldUpdate = true
+      }
+      if (telegramData.username && (!user.username || user.username.startsWith("tg_"))) {
+        user.username = telegramData.username
         shouldUpdate = true
       }
       if (shouldUpdate) {
@@ -146,17 +233,47 @@ export class AuthService {
         fullName: user.fullName,
         phone: user.phone,
         role: user.role,
+        balance: user.balance,
       },
     }
   }
 
   async attachPhone(userId: string, phone: string) {
-    const user = await this.userRepo.findOne({ where: { id: userId } })
+    let user = await this.userRepo.findOne({ where: { id: userId } })
     if (!user) {
       throw new NotFoundException("Foydalanuvchi topilmadi")
     }
-    user.phone = phone
-    await this.userRepo.save(user)
+
+    const cleanPhone = phone.trim()
+    const candidates = getPhoneCandidates(cleanPhone)
+
+    if (user.role === "USER" && candidates.length > 0) {
+      const existingStaff = await this.userRepo
+        .createQueryBuilder("u")
+        .where("u.phone IN (:...candidates) AND u.id != :currId", {
+          candidates,
+          currId: user.id,
+        })
+        .andWhere("u.role IN ('ADMIN', 'CASHIER')")
+        .getOne()
+
+      if (existingStaff) {
+        existingStaff.telegramId = user.telegramId || existingStaff.telegramId
+        if (user.username && !existingStaff.username) existingStaff.username = user.username
+        await this.userRepo.save(existingStaff)
+        try {
+          await this.userRepo.delete(user.id)
+        } catch (_) {}
+        user = existingStaff
+      } else {
+        user.phone = cleanPhone
+        await this.userRepo.save(user)
+      }
+    } else {
+      user.phone = cleanPhone
+      await this.userRepo.save(user)
+    }
+
     return {
       id: user.id,
       telegramId: user.telegramId,
@@ -164,6 +281,7 @@ export class AuthService {
       fullName: user.fullName,
       phone: user.phone,
       role: user.role,
+      balance: user.balance,
     }
   }
 
