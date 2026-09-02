@@ -5,9 +5,10 @@ import { ProductsController } from "./products.controller"
 import { Product } from "../../entities/product.entity"
 import { Category } from "../../entities/category.entity"
 import { Combo } from "../../entities/combo.entity"
+import { OrderItem } from "../../entities/order-item.entity"
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Product, Category, Combo])],
+  imports: [TypeOrmModule.forFeature([Product, Category, Combo, OrderItem])],
   providers: [ProductsService],
   controllers: [ProductsController],
   exports: [ProductsService],

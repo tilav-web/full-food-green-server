@@ -59,6 +59,12 @@ export class DatabaseModule implements OnModuleInit {
       try {
         await this.dataSource.query("ALTER TABLE orders ADD COLUMN packagingFee REAL DEFAULT 0;")
       } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE products ADD COLUMN isPopular BOOLEAN DEFAULT 0;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE products ADD COLUMN soldCount INTEGER DEFAULT 0;")
+      } catch (_) {}
     } catch (err) {
       console.warn("Could not apply SQLite pragmas or column updates:", err)
     }

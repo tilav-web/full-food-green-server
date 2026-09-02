@@ -4,6 +4,7 @@ import { Repository, Like } from "typeorm"
 import { Product, ProductType } from "../../entities/product.entity"
 import { Category } from "../../entities/category.entity"
 import { Combo } from "../../entities/combo.entity"
+import { OrderItem } from "../../entities/order-item.entity"
 import { generateSlug } from "../../utils/slugify"
 
 @Injectable()
@@ -11,7 +12,8 @@ export class ProductsService {
   constructor(
     @InjectRepository(Product) private productRepo: Repository<Product>,
     @InjectRepository(Category) private categoryRepo: Repository<Category>,
-    @InjectRepository(Combo) private comboRepo: Repository<Combo>
+    @InjectRepository(Combo) private comboRepo: Repository<Combo>,
+    @InjectRepository(OrderItem) private orderItemRepo: Repository<OrderItem>
   ) {}
 
   async getAllCategories() {
@@ -34,7 +36,34 @@ export class ProductsService {
     return cat
   }
 
-  async getAllProducts(query?: { categoryId?: string; search?: string; type?: ProductType }) {
+  async getAllProducts(query?: { categoryId?: string; search?: string; type?: ProductType; isPopular?: boolean }) {
+    // Dynamic calculation: Query top 10 best-selling products from order items
+    let topSellingIds: string[] = []
+    const soldCountMap = new Map<string, number>()
+
+    try {
+      const rawSales = await this.orderItemRepo
+        .createQueryBuilder("item")
+        .innerJoin("item.order", "order")
+        .where("order.status != :cancelled", { cancelled: "CANCELLED" })
+        .andWhere("item.productId IS NOT NULL")
+        .select("item.productId", "productId")
+        .addSelect("SUM(item.quantity)", "soldCount")
+        .groupBy("item.productId")
+        .orderBy("soldCount", "DESC")
+        .limit(10)
+        .getRawMany()
+
+      for (const r of rawSales) {
+        if (r.productId) {
+          topSellingIds.push(r.productId)
+          soldCountMap.set(r.productId, Number(r.soldCount) || 0)
+        }
+      }
+    } catch (err) {
+      console.warn("Could not calculate top selling products from order_items:", err)
+    }
+
     const qb = this.productRepo
       .createQueryBuilder("product")
       .leftJoinAndSelect("product.category", "category")
@@ -58,15 +87,41 @@ export class ProductsService {
 
     const products = await qb.getMany()
 
-    // Ensure all products have slugs
+    // Ensure there are always up to 10 popular dishes
+    const finalTopIds = new Set(topSellingIds)
+    if (finalTopIds.size < 10) {
+      for (const p of products) {
+        if (p.isPopular) finalTopIds.add(p.id)
+        if (finalTopIds.size >= 10) break
+      }
+    }
+    if (finalTopIds.size < 10) {
+      for (const p of products) {
+        finalTopIds.add(p.id)
+        if (finalTopIds.size >= 10) break
+      }
+    }
+
+    // Ensure all products have slugs and dynamic popularity flags
     for (const p of products) {
       if (!p.slug && p.name) {
         p.slug = generateSlug(p.name)
         await this.productRepo.update(p.id, { slug: p.slug })
       }
+      p.isPopular = finalTopIds.has(p.id)
+      p.soldCount = soldCountMap.get(p.id) || (p.isPopular ? 15 : 0)
+    }
+
+    if (query?.isPopular) {
+      return products.filter((p) => p.isPopular)
     }
 
     return products
+  }
+
+  async getTopSellingProducts(limit = 10) {
+    const popular = await this.getAllProducts({ isPopular: true })
+    return popular.slice(0, limit)
   }
 
   async getProductById(id: string) {

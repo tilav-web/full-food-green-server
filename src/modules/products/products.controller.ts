@@ -56,6 +56,16 @@ export class ProductsController {
     return this.productsService.deleteCombo(id)
   }
 
+  @Get("popular")
+  async getPopularProducts(@Query("limit") limit?: number) {
+    return this.productsService.getTopSellingProducts(limit ? Number(limit) : 10)
+  }
+
+  @Get("top-selling")
+  async getTopSellingProducts(@Query("limit") limit?: number) {
+    return this.productsService.getTopSellingProducts(limit ? Number(limit) : 10)
+  }
+
   @Get("slug/:slug")
   async getProductBySlug(@Param("slug") slug: string) {
     return this.productsService.getProductBySlug(slug)
@@ -65,9 +75,15 @@ export class ProductsController {
   async getProducts(
     @Query("categoryId") categoryId?: string,
     @Query("search") search?: string,
-    @Query("type") type?: ProductType
+    @Query("type") type?: ProductType,
+    @Query("isPopular") isPopular?: string
   ) {
-    return this.productsService.getAllProducts({ categoryId, search, type })
+    return this.productsService.getAllProducts({
+      categoryId,
+      search,
+      type,
+      isPopular: isPopular === "true" ? true : undefined,
+    })
   }
 
   @Get(":id")

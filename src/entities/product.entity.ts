@@ -69,6 +69,12 @@ export class Product {
   @Column({ default: true })
   isActive: boolean
 
+  @Column({ type: "boolean", default: false })
+  isPopular: boolean
+
+  @Column({ type: "integer", default: 0 })
+  soldCount: number
+
   @Column({ type: "text", default: "pors" }) // Birligi nomi: 'dona', 'pors', 'qoshiq', 'kg', 'gram'
   unitName: string
 
