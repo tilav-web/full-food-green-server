@@ -13,6 +13,7 @@ export class UsersService {
     limit?: number
     search?: string
     role?: string
+    botStatus?: "ALL" | "ACTIVE" | "BLOCKED"
   }) {
     const page = Math.max(1, Number(params.page) || 1)
     const limit = Math.min(100, Math.max(1, Number(params.limit) || 20))
@@ -22,6 +23,12 @@ export class UsersService {
 
     if (params.role && params.role !== "ALL") {
       qb.andWhere("user.role = :role", { role: params.role })
+    }
+
+    if (params.botStatus === "ACTIVE") {
+      qb.andWhere("user.telegramId IS NOT NULL AND user.isBotActive = :botActive", { botActive: true })
+    } else if (params.botStatus === "BLOCKED") {
+      qb.andWhere("user.telegramId IS NOT NULL AND user.isBotActive = :botActive", { botActive: false })
     }
 
     if (params.search && params.search.trim()) {
@@ -55,7 +62,15 @@ export class UsersService {
     const users = await this.userRepo.count({ where: { role: "USER" } })
     const cashiers = await this.userRepo.count({ where: { role: "CASHIER" } })
     const admins = await this.userRepo.count({ where: { role: "ADMIN" } })
-    return { all, users, cashiers, admins }
+    const activeBot = await this.userRepo
+      .createQueryBuilder("u")
+      .where("u.telegramId IS NOT NULL AND u.isBotActive = 1")
+      .getCount()
+    const blockedBot = await this.userRepo
+      .createQueryBuilder("u")
+      .where("u.telegramId IS NOT NULL AND u.isBotActive = 0")
+      .getCount()
+    return { all, users, cashiers, admins, activeBot, blockedBot }
   }
 
   async findAll() {

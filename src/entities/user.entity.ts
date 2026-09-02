@@ -25,6 +25,15 @@ export class User {
   @Column({ nullable: true, select: false })
   password?: string
 
+  @Column({ type: "boolean", default: true })
+  isBotActive: boolean
+
+  @Column({ type: "datetime", nullable: true })
+  botBlockedAt?: Date
+
+  @Column({ type: "datetime", nullable: true })
+  lastBotActivityAt?: Date
+
   @CreateDateColumn()
   createdAt: Date
 

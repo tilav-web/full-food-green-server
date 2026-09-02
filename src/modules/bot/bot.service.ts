@@ -1,6 +1,9 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
+import { InjectRepository } from "@nestjs/typeorm"
+import { Repository, Not, IsNull } from "typeorm"
 import { AuthService } from "../auth/auth.service"
+import { User } from "../../entities/user.entity"
 
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
@@ -18,6 +21,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private userPendingSessions = new Map<number, string>()
 
   constructor(
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
     private readonly authService: AuthService,
     private readonly configService: ConfigService
   ) {
@@ -84,6 +88,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         const response = await this.callApi("getUpdates", {
           offset: this.offset,
           timeout: 20,
+          allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "chat_member"],
         })
 
         if (response && response.ok && Array.isArray(response.result)) {
@@ -103,11 +108,39 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleUpdate(update: any) {
+    // 0. Handle my_chat_member (User blocks or unblocks bot)
+    if (update.my_chat_member) {
+      const chatMember = update.my_chat_member
+      const tgId = String(chatMember.chat?.id || chatMember.from?.id)
+      const newStatus = chatMember.new_chat_member?.status
+      if (newStatus === "kicked") {
+        this.logger.warn(`🚫 User ${tgId} blocked the bot (status: kicked)`)
+        try {
+          await this.userRepo.update({ telegramId: tgId }, { isBotActive: false, botBlockedAt: new Date() })
+        } catch (_) {}
+      } else if (newStatus === "member") {
+        this.logger.log(`✅ User ${tgId} unblocked the bot (status: member)`)
+        try {
+          await this.userRepo.update({ telegramId: tgId }, { isBotActive: true, botBlockedAt: null, lastBotActivityAt: new Date() })
+        } catch (_) {}
+      }
+      return
+    }
+
     if (!update.message) return
     const msg = update.message
     const chatId = msg.chat?.id
     if (!chatId) return
     const text = msg.text || ""
+    const senderTgId = String(msg.from?.id || chatId)
+
+    // Mark user as active on any incoming message
+    try {
+      await this.userRepo.update(
+        { telegramId: senderTgId },
+        { isBotActive: true, botBlockedAt: null, lastBotActivityAt: new Date() }
+      )
+    } catch (_) {}
 
     // 1. Handle /start [token]
     if (text.startsWith("/start")) {
@@ -419,5 +452,129 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.error(`Error sending receipt reviewed notification: ${err}`)
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // BOT STATS & BROADCASTING
+  // ---------------------------------------------------------------------------
+  async getBotStats() {
+    const totalUsers = await this.userRepo.count({
+      where: { telegramId: Not(IsNull()) },
+    })
+    const activeBotUsers = await this.userRepo.count({
+      where: { telegramId: Not(IsNull()), isBotActive: true },
+    })
+    const blockedBotUsers = await this.userRepo.count({
+      where: { telegramId: Not(IsNull()), isBotActive: false },
+    })
+
+    return { totalUsers, activeBotUsers, blockedBotUsers }
+  }
+
+  async broadcastMessage(payload: {
+    message: string
+    imageUrl?: string
+    buttonText?: string
+    buttonUrl?: string
+    targetType: "ALL" | "SELECTED"
+    userIds?: string[]
+  }) {
+    let query = this.userRepo
+      .createQueryBuilder("user")
+      .where("user.telegramId IS NOT NULL AND user.telegramId != ''")
+
+    if (payload.targetType === "SELECTED" && payload.userIds && payload.userIds.length > 0) {
+      query = query.andWhere("user.id IN (:...ids)", { ids: payload.userIds })
+    } else {
+      query = query.andWhere("user.isBotActive = :active", { active: true })
+    }
+
+    const recipients = await query.getMany()
+    const total = recipients.length
+    let sent = 0
+    let blocked = 0
+    let failed = 0
+
+    // Build inline button if provided
+    let replyMarkup: any = undefined
+    if (payload.buttonText && payload.buttonUrl) {
+      const url = payload.buttonUrl.trim()
+      const isWebApp = url.startsWith("http") && !url.includes("t.me")
+      replyMarkup = {
+        inline_keyboard: [
+          [
+            isWebApp
+              ? { text: payload.buttonText.trim(), web_app: { url } }
+              : { text: payload.buttonText.trim(), url },
+          ],
+        ],
+      }
+    }
+
+    const fullImageUrl = payload.imageUrl
+      ? payload.imageUrl.startsWith("http")
+        ? payload.imageUrl
+        : `https://api.full-food.hotel-familyhouse.uz${payload.imageUrl.startsWith("/") ? "" : "/"}${payload.imageUrl}`
+      : null
+
+    this.logger.log(`📢 Starting broadcast to ${total} recipients...`)
+
+    // Send in batches of 25 with 1s delay to respect Telegram rate limits
+    const batchSize = 25
+    for (let i = 0; i < recipients.length; i += batchSize) {
+      const batch = recipients.slice(i, i + batchSize)
+      await Promise.all(
+        batch.map(async (user) => {
+          try {
+            let res: any
+            if (fullImageUrl) {
+              res = await this.callApi("sendPhoto", {
+                chat_id: user.telegramId,
+                photo: fullImageUrl,
+                caption: payload.message,
+                parse_mode: "HTML",
+                reply_markup: replyMarkup,
+              })
+            } else {
+              res = await this.callApi("sendMessage", {
+                chat_id: user.telegramId,
+                text: payload.message,
+                parse_mode: "HTML",
+                reply_markup: replyMarkup,
+              })
+            }
+
+            if (res && res.ok) {
+              sent++
+            } else {
+              const desc = (res?.description || "").toLowerCase()
+              if (
+                res?.error_code === 403 ||
+                desc.includes("blocked") ||
+                desc.includes("user is deactivated") ||
+                desc.includes("chat not found")
+              ) {
+                blocked++
+                await this.userRepo.update(
+                  { id: user.id },
+                  { isBotActive: false, botBlockedAt: new Date() }
+                )
+              } else {
+                failed++
+              }
+            }
+          } catch (e) {
+            failed++
+          }
+        })
+      )
+
+      if (i + batchSize < recipients.length) {
+        await new Promise((r) => setTimeout(r, 1000))
+      }
+    }
+
+    this.logger.log(`📢 Broadcast complete: total=${total}, sent=${sent}, blocked=${blocked}, failed=${failed}`)
+    return { total, sent, blocked, failed }
   }
 }

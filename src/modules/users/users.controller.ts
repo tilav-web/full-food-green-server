@@ -10,9 +10,10 @@ export class UsersController {
     @Query("page") page?: number,
     @Query("limit") limit?: number,
     @Query("search") search?: string,
-    @Query("role") role?: string
+    @Query("role") role?: string,
+    @Query("botStatus") botStatus?: "ALL" | "ACTIVE" | "BLOCKED"
   ) {
-    return this.usersService.findAllPaginated({ page, limit, search, role })
+    return this.usersService.findAllPaginated({ page, limit, search, role, botStatus })
   }
 
   @Get("staff")
