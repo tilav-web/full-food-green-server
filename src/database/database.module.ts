@@ -91,13 +91,7 @@ export class DatabaseModule implements OnModuleInit {
              OR LOWER(name) LIKE '%pepsi%';
         `)
       } catch (_) {}
-      try {
-        await this.dataSource.query(`
-          UPDATE users 
-          SET role = 'USER', password = NULL 
-          WHERE phone LIKE '%331711117%' OR telegramId = '5252424789';
-        `)
-      } catch (_) {}
+
       try {
         await this.dataSource.query("ALTER TABLE users ADD COLUMN isBotActive BOOLEAN DEFAULT 1;")
       } catch (_) {}
