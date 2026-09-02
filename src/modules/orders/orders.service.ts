@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
 import { Order, OrderStatus, OrderType, PaymentStatus } from "../../entities/order.entity"
 import { OrderItem } from "../../entities/order-item.entity"
+import { Product } from "../../entities/product.entity"
 import { InventoryService } from "../inventory/inventory.service"
 import { DeliveryService } from "../delivery/delivery.service"
 import { BotService } from "../bot/bot.service"
@@ -13,6 +14,7 @@ export class OrdersService {
   constructor(
     @InjectRepository(Order) private orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private itemRepo: Repository<OrderItem>,
+    @InjectRepository(Product) private productRepo: Repository<Product>,
     private inventoryService: InventoryService,
     private deliveryService: DeliveryService,
     private botService: BotService,
@@ -41,6 +43,7 @@ export class OrdersService {
     longitude?: number
     distanceKm?: number
     deliveryFee?: number
+    packagingFee?: number
     notes?: string
     containersJson?: string
     items: Array<{
@@ -71,6 +74,17 @@ export class OrdersService {
 
       subtotal += itemTotal
 
+      let itemCostPrice = 0
+      if (item.productId) {
+        try {
+          const product = await this.productRepo.findOne({ where: { id: item.productId } })
+          if (product && product.costPrice) {
+            itemCostPrice = Number(product.costPrice) || 0
+          }
+        } catch (_) {}
+      }
+      const itemTotalCost = itemCostPrice * quantity * portionCount
+
       const oi = this.itemRepo.create({
         productId: item.productId,
         comboId: item.comboId,
@@ -79,6 +93,8 @@ export class OrdersService {
         portionCount,
         unitPrice,
         totalPrice: itemTotal,
+        costPrice: itemCostPrice,
+        totalCost: itemTotalCost,
         customPlateJson: item.customPlateJson,
       })
       orderItems.push(oi)
@@ -90,7 +106,9 @@ export class OrdersService {
     }
 
     const deliveryFee = data.type === "ONLINE_DELIVERY" ? data.deliveryFee || 0 : 0
-    const totalAmount = subtotal + deliveryFee
+    const packagingFee = data.packagingFee || 0
+    // User pays only for food + packaging. Delivery fee is paid directly to taxi driver
+    const totalAmount = subtotal + packagingFee
 
     const order = this.orderRepo.create({
       orderNumber,
@@ -105,6 +123,7 @@ export class OrdersService {
       status: data.type === "DINE_IN" ? "PREPARING" : "PENDING_PAYMENT",
       subtotal,
       deliveryFee,
+      packagingFee,
       totalAmount,
       address: data.address,
       latitude: data.latitude,

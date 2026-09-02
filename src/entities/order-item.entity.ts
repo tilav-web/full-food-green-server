@@ -34,6 +34,12 @@ export class OrderItem {
   @Column({ type: "real", default: 0 })
   totalPrice: number
 
+  @Column({ type: "real", default: 0 })
+  costPrice: number // 1 birlik tannarxi (sotuv paytidagi tannarx)
+
+  @Column({ type: "real", default: 0 })
+  totalCost: number // jami tannarx (quantity * portionCount * costPrice)
+
   @Column({ type: "text", nullable: true })
   customPlateJson: string // Agar bu Konstruktor orqali yig'ilgan tovoq bo'lsa
 }

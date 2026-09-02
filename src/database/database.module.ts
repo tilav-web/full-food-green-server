@@ -42,8 +42,25 @@ export class DatabaseModule implements OnModuleInit {
       await this.dataSource.query("PRAGMA temp_store = MEMORY;")
       await this.dataSource.query("PRAGMA busy_timeout = 5000;")
       console.log("⚡ SQLite Low-RAM optimizations (WAL, 16MB cache) applied successfully.")
+
+      // Safe column additions for SQLite schema evolution
+      try {
+        await this.dataSource.query("ALTER TABLE products ADD COLUMN costPrice REAL DEFAULT 0;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE order_items ADD COLUMN costPrice REAL DEFAULT 0;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE order_items ADD COLUMN totalCost REAL DEFAULT 0;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE products ADD COLUMN packagingLevel INTEGER DEFAULT 2;")
+      } catch (_) {}
+      try {
+        await this.dataSource.query("ALTER TABLE orders ADD COLUMN packagingFee REAL DEFAULT 0;")
+      } catch (_) {}
     } catch (err) {
-      console.warn("Could not apply SQLite pragmas:", err)
+      console.warn("Could not apply SQLite pragmas or column updates:", err)
     }
   }
 }

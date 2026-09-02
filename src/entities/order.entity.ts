@@ -50,6 +50,9 @@ export class Order {
   deliveryFee: number
 
   @Column({ type: "real", default: 0 })
+  packagingFee: number // Qadoqlash idishlari to'lovi
+
+  @Column({ type: "real", default: 0 })
   totalAmount: number
 
   // Delivery & Location

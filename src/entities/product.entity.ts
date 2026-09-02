@@ -38,6 +38,12 @@ export class Product {
   @Column({ type: "real", default: 0 })
   price: number // Joriy sotuv narxi
 
+  @Column({ type: "real", default: 0 })
+  costPrice: number // Taomning tannarxi (masalliq / kirim narxi)
+
+  @Column({ type: "integer", default: 2 })
+  packagingLevel: number // Qadoqlash darajasi (0 - 5 ball, bitta idish sig'imi 5 ball)
+
   @Column({ type: "real", nullable: true })
   oldPrice: number // Skitka/eski narxi (agar mavjud bo'lsa)
 

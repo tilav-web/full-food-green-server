@@ -301,8 +301,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `\n📋 <b>Taomlar tarkibi:</b>\n${itemsText}\n` +
         (!isDineIn && containersText ? `${containersText}\n` : "\n") +
         `💰 <b>Taomlar:</b> ${Number(order.subtotal || 0).toLocaleString()} so'm\n` +
-        (!isDineIn && Number(order.deliveryFee || 0) > 0 ? `🚗 <b>Yetkazish:</b> ${Number(order.deliveryFee || 0).toLocaleString()} so'm\n` : "") +
-        `💵 <b>JAMI SUMMA:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
+        (Number(order.packagingFee || 0) > 0 ? `📦 <b>Qadoqlash idishlari:</b> ${Number(order.packagingFee || 0).toLocaleString()} so'm\n` : "") +
+        (!isDineIn && Number(order.deliveryFee || 0) > 0 ? `🚗 <b>Taxminiy yetkazish (taksiga):</b> ~${Number(order.deliveryFee || 0).toLocaleString()} so'm\n` : "") +
+        `💵 <b>JAMI RESTORAN TO'LOVI:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
         `💳 <b>To'lov usuli:</b> ${order.paymentMethod === "CASH" ? "NAQD PUL" : order.paymentMethod === "TERMINAL" ? "TERMINAL" : order.paymentMethod || "KARTA"}\n` +
         `⏱ <b>Holat:</b> ${isDineIn ? "Oshxonada tayyorlanmoqda (Zal)" : order.status}`
 
