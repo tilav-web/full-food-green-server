@@ -397,12 +397,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      const yandexGoLink =
+        order.latitude && order.longitude
+          ? `https://3.redirect.appmetrica.yandex.com/route?end-lat=${order.latitude}&end-lon=${order.longitude}&tariffClass=econom&ref=fullfood&appmetrica_tracking_id=1178268795219780156&lang=uz`
+          : null
+
       const text = headerTitle +
         `👤 <b>Mijoz:</b> ${order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum")}\n` +
         (!isDineIn && order.customerPhone && order.customerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${order.customerPhone}\n` : "") +
         (order.extraPhone ? `📱 <b>Qo'shimcha tel:</b> ${order.extraPhone}\n` : "") +
         (!isDineIn && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
         (!isDineIn && buildingInfo ? `${buildingInfo}\n` : "") +
+        (!isDineIn && yandexGoLink ? `🚕 <b>Yandex Go:</b> ${yandexGoLink}\n` : "") +
         (order.notes ? `💬 <b>Izoh:</b> ${order.notes}\n` : "") +
         `\n📋 <b>Taomlar tarkibi:</b>\n${itemsText}\n` +
         (!isDineIn && containersText ? `${containersText}\n` : "\n") +
@@ -413,10 +419,28 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `💳 <b>To'lov usuli:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
         `⏱ <b>Holat:</b> ${formatOrderStatus(order.status)}`
 
+      const inlineKeyboard: any[] = []
+      if (yandexGoLink) {
+        inlineKeyboard.push([
+          {
+            text: "🚕 Yandex Go (Taksi chaqirish)",
+            url: yandexGoLink,
+          },
+        ])
+        inlineKeyboard.push([
+          {
+            text: "🗺 Xaritada ko'rish",
+            url: `https://yandex.uz/maps/?pt=${order.longitude},${order.latitude}&z=16&l=map`,
+          },
+        ])
+      }
+
       await this.callApi("sendMessage", {
         chat_id: channel,
         text,
         parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined,
       })
     } catch (err) {
       this.logger.error(`Error sending order notification to channel: ${err}`)
