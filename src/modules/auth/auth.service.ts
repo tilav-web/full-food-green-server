@@ -240,6 +240,47 @@ export class AuthService {
     }
   }
 
+  async quickPhoneLogin(phone: string, fullName?: string) {
+    const cleanPhone = phone.trim()
+    const candidates = getPhoneCandidates(cleanPhone)
+    let user: User | null = null
+
+    if (candidates.length > 0) {
+      user = await this.userRepo
+        .createQueryBuilder("user")
+        .where("user.phone IN (:...candidates) AND user.role = 'USER'", { candidates })
+        .getOne()
+    }
+
+    if (!user) {
+      user = this.userRepo.create({
+        phone: cleanPhone,
+        fullName: fullName?.trim() || "Mijoz",
+        username: `client_${Date.now().toString().slice(-6)}`,
+        role: "USER" as UserRole,
+      })
+      user = await this.userRepo.save(user)
+    } else if (fullName?.trim() && (!user.fullName || user.fullName === "Mijoz")) {
+      user.fullName = fullName.trim()
+      await this.userRepo.save(user)
+    }
+
+    const { accessToken, refreshToken } = this.generateTokens(user)
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        telegramId: user.telegramId,
+        username: user.username,
+        fullName: user.fullName,
+        phone: user.phone,
+        role: user.role,
+        balance: user.balance,
+      },
+    }
+  }
+
   // Web Browser Auth Session creation
   createWebAuthSession() {
     this.cleanExpiredSessions()

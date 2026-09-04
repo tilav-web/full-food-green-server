@@ -27,6 +27,11 @@ export class AuthController {
     return this.authService.attachPhone(body.userId, body.phone)
   }
 
+  @Post("phone-login")
+  async phoneLogin(@Body() body: { phone: string; fullName?: string }) {
+    return this.authService.quickPhoneLogin(body.phone, body.fullName)
+  }
+
   @Post("create-web-session")
   async createWebSession() {
     return this.authService.createWebAuthSession()
