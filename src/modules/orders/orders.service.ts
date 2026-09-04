@@ -197,8 +197,9 @@ export class OrdersService {
 
     const savedOrder = await this.orderRepo.save(order)
 
-    // Notify Telegram channel with receipt photo
+    // Notify Telegram channel with receipt photo & notify user
     this.botService.sendReceiptNotification(savedOrder, receiptImageUrl)
+    this.botService.notifyUserReceiptUploaded(savedOrder)
 
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)
@@ -278,8 +279,9 @@ export class OrdersService {
 
     const savedOrder = await this.orderRepo.save(order)
 
-    // Notify Telegram bot channel
+    // Notify Telegram bot channel & customer
     this.botService.sendOrderNotification(savedOrder)
+    this.botService.notifyOrderStatusChange(savedOrder, "PREPARING")
 
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)
@@ -297,6 +299,9 @@ export class OrdersService {
 
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)
+
+    // Notify customer in Telegram bot about order status update
+    this.botService.notifyOrderStatusChange(savedOrder, status)
 
     return savedOrder
   }
@@ -324,6 +329,9 @@ export class OrdersService {
 
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)
+
+    // Notify customer in Telegram bot about delivery status
+    this.botService.notifyOrderStatusChange(savedOrder, "DELIVERING")
 
     return { order: savedOrder, dispatchInfo: result }
   }

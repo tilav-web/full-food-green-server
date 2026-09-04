@@ -429,8 +429,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         ])
         inlineKeyboard.push([
           {
-            text: "🗺 Xaritada ko'rish",
-            url: `https://yandex.uz/maps/?pt=${order.longitude},${order.latitude}&z=16&l=map`,
+            text: "🗺 Yandex Xarita (Pin)",
+            url: `https://yandex.uz/maps/?pt=${order.longitude},${order.latitude}&z=17&l=map`,
+          },
+          {
+            text: "📍 Google Maps (Pin)",
+            url: `https://www.google.com/maps/search/?api=1&query=${order.latitude},${order.longitude}`,
           },
         ])
       }
@@ -442,6 +446,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         disable_web_page_preview: true,
         reply_markup: inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined,
       })
+
+      // Also send order confirmation directly to the customer in bot
+      await this.notifyUserOrderCreated(order)
     } catch (err) {
       this.logger.error(`Error sending order notification to channel: ${err}`)
     }
@@ -494,23 +501,241 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // Notify channel on receipt approval or rejection
+  // Notify channel on receipt approval or rejection & notify order owner
   async sendReceiptReviewedNotification(order: any, approved: boolean, reason?: string) {
     try {
       const channel = this.ordersChannelId
-      if (!channel) return
+      if (channel) {
+        const text = approved
+          ? `✅ <b>TO'LOV TASDIQLANDI!</b>\n\n📌 <b>Buyurtma:</b> #${order.orderNumber}\n👤 <b>Mijoz:</b> ${order.customerName}\n💵 <b>Summa:</b> ${Number(order.totalAmount || 0).toLocaleString()} so'm\n\n👨‍🍳 <i>Buyurtma oshxonaga tayyorlash uchun yo'naltirildi!</i>`
+          : `❌ <b>TO'LOV RAD ETILDI!</b>\n\n📌 <b>Buyurtma:</b> #${order.orderNumber}\n👤 <b>Mijoz:</b> ${order.customerName}\n⚠️ <b>Sabab:</b> ${reason || "Chek mos kelmadi"}\n\n<i>Buyurtma bekor qilindi.</i>`
 
-      const text = approved
-        ? `✅ <b>TO'LOV TASDIQLANDI!</b>\n\n📌 <b>Buyurtma:</b> #${order.orderNumber}\n👤 <b>Mijoz:</b> ${order.customerName}\n💵 <b>Summa:</b> ${Number(order.totalAmount || 0).toLocaleString()} so'm\n\n👨‍🍳 <i>Buyurtma oshxonaga tayyorlash uchun yo'naltirildi!</i>`
-        : `❌ <b>TO'LOV RAD ETILDI!</b>\n\n📌 <b>Buyurtma:</b> #${order.orderNumber}\n👤 <b>Mijoz:</b> ${order.customerName}\n⚠️ <b>Sabab:</b> ${reason || "Chek mos kelmadi"}\n\n<i>Buyurtma bekor qilindi.</i>`
+        await this.callApi("sendMessage", {
+          chat_id: channel,
+          text,
+          parse_mode: "HTML",
+        })
+      }
 
-      await this.callApi("sendMessage", {
-        chat_id: channel,
-        text,
-        parse_mode: "HTML",
-      })
+      // Also notify order customer directly via private bot message
+      await this.notifyUserReceiptReviewed(order, approved, reason)
     } catch (err) {
       this.logger.error(`Error sending receipt reviewed notification: ${err}`)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // CUSTOMER (ORDER OWNER) PRIVATE BOT NOTIFICATIONS
+  // ---------------------------------------------------------------------------
+
+  // Helper to find customer's Telegram ID from order
+  async getUserTelegramId(order: any): Promise<string | null> {
+    try {
+      if (order.userId) {
+        const user = await this.userRepo.findOne({ where: { id: order.userId } })
+        if (user?.telegramId) return user.telegramId
+      }
+      if (order.customerPhone) {
+        const user = await this.userRepo.findOne({ where: { phone: order.customerPhone } })
+        if (user?.telegramId) return user.telegramId
+      }
+    } catch (e) {
+      this.logger.warn(`Could not resolve telegramId for order #${order.orderNumber}: ${e}`)
+    }
+    return null
+  }
+
+  // 1. Notify user when order is initially created
+  async notifyUserOrderCreated(order: any) {
+    try {
+      const tgId = await this.getUserTelegramId(order)
+      if (!tgId) return
+
+      const isDineIn = order.type === "DINE_IN"
+      const isPickup = order.type === "ONLINE_PICKUP"
+      const typeLabel = isDineIn ? "🍽 Restoranda (Zal)" : isPickup ? "🚶 Olib ketish" : "🚗 Yetkazib berish"
+
+      const text =
+        `🎉 <b>Buyurtmangiz muvaffaqiyatli qabul qilindi!</b>\n\n` +
+        `📌 <b>Buyurtma raqami:</b> <code>#${order.orderNumber}</code>\n` +
+        `🛎 <b>Turi:</b> ${typeLabel}\n` +
+        `💵 <b>Jami to'lov:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
+        (!isDineIn && !isPickup && order.address ? `📍 <b>Yetkazish manzili:</b> ${order.address}\n` : "") +
+        `\n<i>Buyurtmangiz holati o'zgarganda bu yerda xabardor qilib boramiz.</i>`
+
+      await this.callApi("sendMessage", {
+        chat_id: tgId,
+        text,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "📱 Buyurtmani kuzatish",
+                web_app: { url: this.webAppUrl },
+              },
+            ],
+          ],
+        },
+      })
+    } catch (err) {
+      this.logger.error(`Error sending user order created notification: ${err}`)
+    }
+  }
+
+  // 2. Notify user when receipt is uploaded
+  async notifyUserReceiptUploaded(order: any) {
+    try {
+      const tgId = await this.getUserTelegramId(order)
+      if (!tgId) return
+
+      const text =
+        `🧾 <b>To'lov chekingiz qabul qilindi!</b>\n\n` +
+        `📌 <b>Buyurtma:</b> <code>#${order.orderNumber}</code>\n` +
+        `💵 <b>Summa:</b> ${Number(order.totalAmount || 0).toLocaleString()} so'm\n\n` +
+        `⏳ <i>Kassirimiz to'lov chekini tekshirmoqda. Tasdiqlanishi bilan sizga xabar yuboramiz!</i>`
+
+      await this.callApi("sendMessage", {
+        chat_id: tgId,
+        text,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "📱 Buyurtmani kuzatish",
+                web_app: { url: this.webAppUrl },
+              },
+            ],
+          ],
+        },
+      })
+    } catch (err) {
+      this.logger.error(`Error sending user receipt uploaded notification: ${err}`)
+    }
+  }
+
+  // 3. Notify user when receipt is reviewed (approved or rejected)
+  async notifyUserReceiptReviewed(order: any, approved: boolean, reason?: string) {
+    try {
+      const tgId = await this.getUserTelegramId(order)
+      if (!tgId) return
+
+      let text: string
+      let replyMarkup: any
+
+      if (approved) {
+        text =
+          `✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n` +
+          `📌 <b>Buyurtma raqami:</b> <code>#${order.orderNumber}</code>\n` +
+          `💵 <b>Qabul qilingan summa:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n\n` +
+          `👨‍🍳 <i>Buyurtmangiz oshxonaga yuborildi va tayyorlanmoqda!</i>`
+
+        replyMarkup = {
+          inline_keyboard: [
+            [
+              {
+                text: "📱 Buyurtmani kuzatish",
+                web_app: { url: this.webAppUrl },
+              },
+            ],
+          ],
+        }
+      } else {
+        text =
+          `❌ <b>To'lov chekingiz tasdiqlanmadi</b>\n\n` +
+          `📌 <b>Buyurtma raqami:</b> <code>#${order.orderNumber}</code>\n` +
+          `⚠️ <b>Sabab:</b> ${reason || "Chek to'lovga mos kelmadi yoki noaniq"}\n\n` +
+          `<i>Iltimos, ilovada to'g'ri chekni qayta yuklang yoki buyurtmani qayta rasmiylashtiring.</i>`
+
+        replyMarkup = {
+          inline_keyboard: [
+            [
+              {
+                text: "🧾 Qayta chek yuklash",
+                web_app: { url: this.webAppUrl },
+              },
+            ],
+          ],
+        }
+      }
+
+      await this.callApi("sendMessage", {
+        chat_id: tgId,
+        text,
+        parse_mode: "HTML",
+        reply_markup: replyMarkup,
+      })
+    } catch (err) {
+      this.logger.error(`Error sending user receipt reviewed notification: ${err}`)
+    }
+  }
+
+  // 4. Notify user when order status changes
+  async notifyOrderStatusChange(order: any, status: string, extraInfo?: string) {
+    try {
+      const tgId = await this.getUserTelegramId(order)
+      if (!tgId) return
+
+      let title = ""
+      let message = ""
+
+      switch (status) {
+        case "PREPARING":
+          title = "👨‍🍳 <b>Buyurtmangiz tayyorlanmoqda!</b>"
+          message = "Oshpazlarimiz taomlaringizni parhez va sog'lom me'yorlarga mos ravishda tayyorlashmoqda."
+          break
+        case "READY_FOR_DELIVERY":
+          title = "🍱 <b>Buyurtmangiz tayyor!</b>"
+          message =
+            order.type === "ONLINE_PICKUP"
+              ? "Buyurtmangiz tayyor, restoranimizga kelib olib ketishingiz mumkin!"
+              : "Taomlar qadoqlanib, yetkazib berishga shay holatga keltirildi."
+          break
+        case "DELIVERING":
+          title = "🚗 <b>Buyurtmangiz yo'lga chiqdi!</b>"
+          message =
+            `Yetkazish manzili: <b>${order.address || "Ko'rsatilgan manzil"}</b>\n` +
+            (order.yandexTaxiDriverPhone ? `📞 <b>Haydovchi tel:</b> ${order.yandexTaxiDriverPhone}\n` : "") +
+            `Kuryer siz tomon harakatlanmoqda. Tez orada yetib boradi!`
+          break
+        case "COMPLETED":
+          title = "🎉 <b>Buyurtmangiz yetkazildi!</b>"
+          message =
+            "Yoqimli ishtaha! Sog'lom taomlarimiz sizga kuch-quvvat ulashsin.\n" +
+            "Full Food ni tanlaganingiz uchun tashakkur! 😊"
+          break
+        case "CANCELLED":
+          title = "❌ <b>Buyurtmangiz bekor qilindi</b>"
+          message = extraInfo || "Buyurtmangiz bekor qilindi. Savollaringiz bo'lsa, ma'muriyatimizga murojaat qilishingiz mumkin."
+          break
+        default:
+          return
+      }
+
+      const text =
+        `${title}\n\n` +
+        `📌 <b>Buyurtma raqami:</b> <code>#${order.orderNumber}</code>\n` +
+        `💵 <b>Summa:</b> ${Number(order.totalAmount || 0).toLocaleString()} so'm\n\n` +
+        `${message}`
+
+      await this.callApi("sendMessage", {
+        chat_id: tgId,
+        text,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "📱 Buyurtmani ko'rish",
+                web_app: { url: this.webAppUrl },
+              },
+            ],
+          ],
+        },
+      })
+    } catch (err) {
+      this.logger.error(`Error notifying user of status change: ${err}`)
     }
   }
 
