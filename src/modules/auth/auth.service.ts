@@ -176,17 +176,33 @@ export class AuthService {
           .getOne()
 
         if (existingStaff) {
+          const oldUserId = user.id
+
+          // 1. Reassign any orders belonging to temporary user
+          try {
+            await this.userRepo.query("UPDATE orders SET userId = ? WHERE userId = ?", [existingStaff.id, oldUserId])
+          } catch (_) {}
+
+          // 2. Clear telegramId on the old user BEFORE saving existingStaff to avoid SQLITE UNIQUE constraint failure
+          await this.userRepo
+            .createQueryBuilder()
+            .update(User)
+            .set({ telegramId: null as any })
+            .where("id = :id", { id: oldUserId })
+            .execute()
+
+          try {
+            await this.userRepo.delete(oldUserId)
+          } catch (_) {}
+
           existingStaff.telegramId = tgIdStr
-          if (telegramData.username) existingStaff.username = telegramData.username
-          if (telegramData.fullName && (!existingStaff.fullName || existingStaff.fullName === "Super Admin")) {
+          if (telegramData.username && (!existingStaff.username || existingStaff.username.startsWith("tg_"))) {
+            existingStaff.username = telegramData.username
+          }
+          if (telegramData.fullName && (!existingStaff.fullName || existingStaff.fullName === "Super Admin" || existingStaff.fullName === "6060")) {
             existingStaff.fullName = telegramData.fullName
           }
           await this.userRepo.save(existingStaff)
-
-          // Remove the temporary duplicate placeholder
-          try {
-            await this.userRepo.delete(user.id)
-          } catch (_) {}
 
           user = existingStaff
         }
@@ -258,12 +274,29 @@ export class AuthService {
         .getOne()
 
       if (existingStaff) {
-        existingStaff.telegramId = user.telegramId || existingStaff.telegramId
+        const staffTgId = user.telegramId || existingStaff.telegramId
+        const oldUserId = user.id
+
+        try {
+          await this.userRepo.query("UPDATE orders SET userId = ? WHERE userId = ?", [existingStaff.id, oldUserId])
+        } catch (_) {}
+
+        await this.userRepo
+          .createQueryBuilder()
+          .update(User)
+          .set({ telegramId: null as any })
+          .where("id = :id", { id: oldUserId })
+          .execute()
+
+        try {
+          await this.userRepo.delete(oldUserId)
+        } catch (_) {}
+
+        if (staffTgId) {
+          existingStaff.telegramId = staffTgId
+        }
         if (user.username && !existingStaff.username) existingStaff.username = user.username
         await this.userRepo.save(existingStaff)
-        try {
-          await this.userRepo.delete(user.id)
-        } catch (_) {}
         user = existingStaff
       } else {
         user.phone = cleanPhone
@@ -274,14 +307,19 @@ export class AuthService {
       await this.userRepo.save(user)
     }
 
+    const { accessToken, refreshToken } = this.generateTokens(user)
     return {
-      id: user.id,
-      telegramId: user.telegramId,
-      username: user.username,
-      fullName: user.fullName,
-      phone: user.phone,
-      role: user.role,
-      balance: user.balance,
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        telegramId: user.telegramId,
+        username: user.username,
+        fullName: user.fullName,
+        phone: user.phone,
+        role: user.role,
+        balance: user.balance,
+      },
     }
   }
 

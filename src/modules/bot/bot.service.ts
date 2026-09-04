@@ -234,7 +234,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         inlineButtons.push([
           {
             text: "👑 Super Admin Paneli (Mini App)",
-            web_app: { url: this.webAppUrl },
+            web_app: { url: `${this.webAppUrl}/admin?tab=STATS` },
           },
         ])
         inlineButtons.push([
@@ -248,7 +248,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         inlineButtons.push([
           {
             text: "🧾 Kassa POS Paneli (Mini App)",
-            web_app: { url: this.webAppUrl },
+            web_app: { url: `${this.webAppUrl}/cashier?tab=POS` },
           },
         ])
         inlineButtons.push([
