@@ -139,13 +139,21 @@ export class AuthService {
       where: { telegramId: tgIdStr },
     })
 
+    // Telegram Bot & Mini App are strictly for customer experience (role: 'USER').
+    // Staff roles (ADMIN, CASHIER) are strictly for browser login with username & password.
+    // If a staff account was previously linked with this telegramId, detach it so the staff credentials remain intact for browser login.
+    if (user && user.role !== "USER") {
+      await this.userRepo.update(user.id, { telegramId: null as any })
+      user = null
+    }
+
     // 1. If user is not found by telegramId, but phone is provided:
     if (!user && telegramData.phone) {
       const candidates = getPhoneCandidates(telegramData.phone)
       if (candidates.length > 0) {
         user = await this.userRepo
           .createQueryBuilder("user")
-          .where("user.phone IN (:...candidates)", { candidates })
+          .where("user.phone IN (:...candidates) AND user.role = 'USER'", { candidates })
           .getOne()
 
         if (user) {
@@ -161,55 +169,7 @@ export class AuthService {
       }
     }
 
-    // 2. If user was found by telegramId, but role is 'USER' and phone is now provided:
-    // Check if an ADMIN or CASHIER exists with this phone who hasn't linked telegramId yet
-    if (user && user.role === "USER" && telegramData.phone) {
-      const candidates = getPhoneCandidates(telegramData.phone)
-      if (candidates.length > 0) {
-        const existingStaff = await this.userRepo
-          .createQueryBuilder("user")
-          .where("user.phone IN (:...candidates) AND user.id != :currId", {
-            candidates,
-            currId: user.id,
-          })
-          .andWhere("user.role IN ('ADMIN', 'CASHIER')")
-          .getOne()
-
-        if (existingStaff) {
-          const oldUserId = user.id
-
-          // 1. Reassign any orders belonging to temporary user
-          try {
-            await this.userRepo.query("UPDATE orders SET userId = ? WHERE userId = ?", [existingStaff.id, oldUserId])
-          } catch (_) {}
-
-          // 2. Clear telegramId on the old user BEFORE saving existingStaff to avoid SQLITE UNIQUE constraint failure
-          await this.userRepo
-            .createQueryBuilder()
-            .update(User)
-            .set({ telegramId: null as any })
-            .where("id = :id", { id: oldUserId })
-            .execute()
-
-          try {
-            await this.userRepo.delete(oldUserId)
-          } catch (_) {}
-
-          existingStaff.telegramId = tgIdStr
-          if (telegramData.username && (!existingStaff.username || existingStaff.username.startsWith("tg_"))) {
-            existingStaff.username = telegramData.username
-          }
-          if (telegramData.fullName && (!existingStaff.fullName || existingStaff.fullName === "Super Admin" || existingStaff.fullName === "6060")) {
-            existingStaff.fullName = telegramData.fullName
-          }
-          await this.userRepo.save(existingStaff)
-
-          user = existingStaff
-        }
-      }
-    }
-
-    // 3. If still no user exists at all, create a new customer (USER)
+    // 2. If still no user exists at all, create a new customer (USER)
     if (!user) {
       user = this.userRepo.create({
         telegramId: tgIdStr,
@@ -221,7 +181,7 @@ export class AuthService {
       user = await this.userRepo.save(user)
     } else {
       let shouldUpdate = false
-      if (telegramData.fullName && user.fullName !== telegramData.fullName && user.role === "USER") {
+      if (telegramData.fullName && user.fullName !== telegramData.fullName) {
         user.fullName = telegramData.fullName
         shouldUpdate = true
       }
@@ -255,57 +215,14 @@ export class AuthService {
   }
 
   async attachPhone(userId: string, phone: string) {
-    let user = await this.userRepo.findOne({ where: { id: userId } })
+    const user = await this.userRepo.findOne({ where: { id: userId } })
     if (!user) {
       throw new NotFoundException("Foydalanuvchi topilmadi")
     }
 
     const cleanPhone = phone.trim()
-    const candidates = getPhoneCandidates(cleanPhone)
-
-    if (user.role === "USER" && candidates.length > 0) {
-      const existingStaff = await this.userRepo
-        .createQueryBuilder("u")
-        .where("u.phone IN (:...candidates) AND u.id != :currId", {
-          candidates,
-          currId: user.id,
-        })
-        .andWhere("u.role IN ('ADMIN', 'CASHIER')")
-        .getOne()
-
-      if (existingStaff) {
-        const staffTgId = user.telegramId || existingStaff.telegramId
-        const oldUserId = user.id
-
-        try {
-          await this.userRepo.query("UPDATE orders SET userId = ? WHERE userId = ?", [existingStaff.id, oldUserId])
-        } catch (_) {}
-
-        await this.userRepo
-          .createQueryBuilder()
-          .update(User)
-          .set({ telegramId: null as any })
-          .where("id = :id", { id: oldUserId })
-          .execute()
-
-        try {
-          await this.userRepo.delete(oldUserId)
-        } catch (_) {}
-
-        if (staffTgId) {
-          existingStaff.telegramId = staffTgId
-        }
-        if (user.username && !existingStaff.username) existingStaff.username = user.username
-        await this.userRepo.save(existingStaff)
-        user = existingStaff
-      } else {
-        user.phone = cleanPhone
-        await this.userRepo.save(user)
-      }
-    } else {
-      user.phone = cleanPhone
-      await this.userRepo.save(user)
-    }
+    user.phone = cleanPhone
+    await this.userRepo.save(user)
 
     const { accessToken, refreshToken } = this.generateTokens(user)
     return {

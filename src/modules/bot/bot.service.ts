@@ -226,46 +226,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       const cleanName = this.escapeHtml(rawFullName)
       const cleanPhone = this.escapeHtml(phone)
 
-      let messageText = ""
-      const inlineButtons: any[] = []
-
-      if (syncedRole === "ADMIN") {
-        messageText = `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Super Admin:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\n👑 <b>Super Admin Boshqaruv Paneliga</b> xush kelibsiz! Quyidagi tugma orqali boshqaruv panelini ochishingiz mumkin:`
-        inlineButtons.push([
-          {
-            text: "👑 Super Admin Paneli (Mini App)",
-            web_app: { url: `${this.webAppUrl}/admin?tab=STATS` },
-          },
-        ])
-        inlineButtons.push([
-          {
-            text: "🍽 Mijozlar Menyusini Ko'rish",
-            web_app: { url: `${this.webAppUrl}/menu?viewMenu=true` },
-          },
-        ])
-      } else if (syncedRole === "CASHIER") {
-        messageText = `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Kassir:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\n🧾 <b>Kassa POS Tizimiga</b> xush kelibsiz! Quyidagi tugma orqali buyurtmalarni qabul qilishingiz mumkin:`
-        inlineButtons.push([
-          {
-            text: "🧾 Kassa POS Paneli (Mini App)",
-            web_app: { url: `${this.webAppUrl}/cashier?tab=POS` },
-          },
-        ])
-        inlineButtons.push([
-          {
-            text: "🍽 Mijozlar Menyusini Ko'rish",
-            web_app: { url: `${this.webAppUrl}/menu?viewMenu=true` },
-          },
-        ])
-      } else {
-        messageText = `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Mijoz:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\nEndi bemalol o'zingiz yoqtirgan taomlarni buyurtma qilishingiz mumkin:`
-        inlineButtons.push([
+      const messageText = `🎉 <b>Raqamingiz muvaffaqiyatli tasdiqlandi!</b>\n\n👤 <b>Mijoz:</b> ${cleanName}\n📱 <b>Telefon:</b> ${cleanPhone}\n\nEndi bemalol o'zingiz yoqtirgan sog'lom taomlarni buyurtma qilishingiz mumkin:`
+      const inlineButtons: any[] = [
+        [
           {
             text: "🍽 Taomlar Menusini Ochish (Mini App)",
             web_app: { url: this.webAppUrl },
           },
-        ])
-      }
+        ],
+      ]
 
       if (webLoginUrl) {
         inlineButtons.push([
