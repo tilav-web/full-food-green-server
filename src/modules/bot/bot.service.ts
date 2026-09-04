@@ -275,138 +275,158 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // Helper to format full order details & inline buttons for channel notifications
+  buildOrderNotificationDetails(order: any, isReceipt: boolean = false) {
+    let itemsText = ""
+    if (order.items && Array.isArray(order.items)) {
+      itemsText = order.items
+        .map(
+          (it: any) =>
+            `  • <b>${it.quantity}x</b> ${it.name} — <i>${(it.unitPrice * it.quantity).toLocaleString()} so'm</i>`
+        )
+        .join("\n")
+    }
+
+    let containersText = ""
+    if (order.containersJson) {
+      try {
+        const containers = typeof order.containersJson === "string" ? JSON.parse(order.containersJson) : order.containersJson
+        if (Array.isArray(containers) && containers.length > 0) {
+          containersText = `\n🍱 <b>IDISHLARGA TAQSIMOT (${containers.length} ta boks):</b>\n` +
+            containers
+              .map((c: any, i: number) => {
+                const label = c.label ? ` (${c.label})` : ""
+                const cItems = (c.items || [])
+                  .map((it: any) => `    ▫️ <b>${it.quantity}x</b> ${it.name}`)
+                  .join("\n")
+                return `  📦 <b>${c.name || `${i + 1}-Idish`}${label}:</b>\n${cItems || "    (Bo'sh)"}`
+              })
+              .join("\n\n") + "\n"
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+
+    const buildingInfo = [
+      order.building ? `🏢 <b>Dom:</b> ${order.building}` : null,
+      order.floor ? `<b>Qavat:</b> ${order.floor}` : null,
+      order.apartment ? `<b>Xona:</b> ${order.apartment}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ")
+
+    const isDineIn = order.type === "DINE_IN"
+    const isPickup = order.type === "ONLINE_PICKUP"
+
+    const formatPaymentMethod = (method?: string): string => {
+      if (!method) return "Karta orqali o'tkazma"
+      switch (method.toUpperCase()) {
+        case "CARD_TRANSFER":
+          return "Karta orqali o'tkazma"
+        case "CASH":
+          return "Naqd pul"
+        case "TERMINAL":
+          return "Karta orqali terminalda"
+        case "BALANCE":
+          return "Mijoz balansi"
+        default:
+          return method
+      }
+    }
+
+    const formatOrderStatus = (status?: string): string => {
+      if (isDineIn) return "Oshxonada tayyorlanmoqda (Zal)"
+      if (!status) return "Qabul qilindi"
+      switch (status.toUpperCase()) {
+        case "PENDING_PAYMENT":
+          return "To'lov / Chek kutilmoqda"
+        case "PAYMENT_REVIEW":
+          return "Chek tekshirilmoqda"
+        case "PREPARING":
+          return "Oshxonada tayyorlanmoqda"
+        case "READY_FOR_DELIVERY":
+          return "Yetkazishga tayyor"
+        case "DELIVERING":
+          return "Yo'lda (Yetkazilmoqda)"
+        case "COMPLETED":
+          return "Yetkazildi (Yakunlandi)"
+        case "CANCELLED":
+          return "Bekor qilindi"
+        default:
+          return status
+      }
+    }
+
+    const headerTitle = isReceipt
+      ? `🧾 <b>YANGI TO'LANGAN BUYURTMA & CHEK #${order.orderNumber}</b>\n🛎 <b>Turi:</b> ${isPickup ? "🚶 Olib ketish" : "🚗 Yetkazib berish"}\n\n`
+      : isDineIn
+      ? `🍽 <b>YANGI ZAL (KASSA) BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🍽 Zalda iste'mol (Kassa POS)\n\n`
+      : isPickup
+      ? `🚶 <b>YANGI OLIB KETISH BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚶 Olib ketish (Self-pickup)\n\n`
+      : `🔔 <b>YANGI TELEGRAM BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚗 Yetkazib berish (Telegram bot)\n\n`
+
+    const yandexGoLink =
+      order.latitude && order.longitude
+        ? `https://3.redirect.appmetrica.yandex.com/route?end-lat=${order.latitude}&end-lon=${order.longitude}&tariffClass=econom&ref=fullfood&appmetrica_tracking_id=1178268795219780156&lang=uz`
+        : null
+
+    const text = headerTitle +
+      `👤 <b>Mijoz:</b> ${order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum")}\n` +
+      (!isDineIn && order.customerPhone && order.customerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${order.customerPhone}\n` : "") +
+      (order.extraPhone ? `📱 <b>Qo'shimcha tel:</b> ${order.extraPhone}\n` : "") +
+      (!isDineIn && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
+      (!isDineIn && buildingInfo ? `${buildingInfo}\n` : "") +
+      (!isDineIn && yandexGoLink ? `🚕 <b>Yandex Go:</b> ${yandexGoLink}\n` : "") +
+      (order.notes ? `💬 <b>Izoh:</b> ${order.notes}\n` : "") +
+      `\n📋 <b>Taomlar tarkibi:</b>\n${itemsText}\n` +
+      (!isDineIn && containersText ? `${containersText}\n` : "\n") +
+      `💰 <b>Taomlar:</b> ${Number(order.subtotal || 0).toLocaleString()} so'm\n` +
+      (Number(order.packagingFee || 0) > 0 ? `📦 <b>Qadoqlash (idishlar):</b> ${Number(order.packagingFee || 0).toLocaleString()} so'm\n` : "") +
+      (!isDineIn && !isPickup ? `🚗 <b>Yetkazish:</b> Alohida to'lanadi (taksiga)\n` : "") +
+      `💵 <b>JAMI RESTORAN TO'LOVI:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
+      `💳 <b>To'lov usuli:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
+      `⏱ <b>Holat:</b> ${isReceipt ? "⚠️ Chek tekshirilmoqda" : formatOrderStatus(order.status)}` +
+      (isReceipt ? `\n\n<i>Kassir/Admin iltimos, to'lovni tekshirib tasdiqlang.</i>` : "")
+
+    const shortCaption = `🧾 <b>TO'LOV CHEKI YUKLANDI #${order.orderNumber}</b>\n\n` +
+      `👤 <b>Mijoz:</b> ${order.customerName || "Noma'lum"} (${order.customerPhone || ""})\n` +
+      (!isDineIn && !isPickup && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
+      `💵 <b>Jami to'lov:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
+      `💳 <b>To'lov turi:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
+      `⏱ <b>Holat:</b> ⚠️ Chek tekshirilmoqda\n\n` +
+      `<i>Batafsil buyurtma ma'lumoti pastda 👇</i>`
+
+    const inlineKeyboard: any[] = []
+    if (yandexGoLink) {
+      inlineKeyboard.push([
+        {
+          text: "🚕 Yandex Go (Taksi chaqirish)",
+          url: yandexGoLink,
+        },
+      ])
+      inlineKeyboard.push([
+        {
+          text: "🗺 Yandex Xarita (Pin)",
+          url: `https://yandex.uz/maps/?pt=${order.longitude},${order.latitude}&z=17&l=map`,
+        },
+        {
+          text: "📍 Google Maps (Pin)",
+          url: `https://www.google.com/maps/search/?api=1&query=${order.latitude},${order.longitude}`,
+        },
+      ])
+    }
+
+    return { text, shortCaption, inlineKeyboard }
+  }
+
   // Forward New Order details to Telegram Orders Channel
   async sendOrderNotification(order: any) {
     try {
       const channel = this.ordersChannelId
       if (!channel) return
 
-      let itemsText = ""
-      if (order.items && Array.isArray(order.items)) {
-        itemsText = order.items
-          .map(
-            (it: any) =>
-              `  • <b>${it.quantity}x</b> ${it.name} — <i>${(it.unitPrice * it.quantity).toLocaleString()} so'm</i>`
-          )
-          .join("\n")
-      }
-
-      let containersText = ""
-      if (order.containersJson) {
-        try {
-          const containers = typeof order.containersJson === "string" ? JSON.parse(order.containersJson) : order.containersJson
-          if (Array.isArray(containers) && containers.length > 0) {
-            containersText = `\n🍱 <b>IDISHLARGA TAQSIMOT (${containers.length} ta boks):</b>\n` +
-              containers
-                .map((c: any, i: number) => {
-                  const label = c.label ? ` (${c.label})` : ""
-                  const cItems = (c.items || [])
-                    .map((it: any) => `    ▫️ <b>${it.quantity}x</b> ${it.name}`)
-                    .join("\n")
-                  return `  📦 <b>${c.name || `${i + 1}-Idish`}${label}:</b>\n${cItems || "    (Bo'sh)"}`
-                })
-                .join("\n\n") + "\n"
-          }
-        } catch (e) {
-          // ignore parse errors
-        }
-      }
-
-      const buildingInfo = [
-        order.building ? `🏢 <b>Dom:</b> ${order.building}` : null,
-        order.floor ? `<b>Qavat:</b> ${order.floor}` : null,
-        order.apartment ? `<b>Xona:</b> ${order.apartment}` : null,
-      ]
-        .filter(Boolean)
-        .join(" | ")
-
-      const isDineIn = order.type === "DINE_IN"
-      const isPickup = order.type === "ONLINE_PICKUP"
-
-      const headerTitle = isDineIn
-        ? `🍽 <b>YANGI ZAL (KASSA) BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🍽 Zalda iste'mol (Kassa POS)\n\n`
-        : isPickup
-        ? `🚶 <b>YANGI OLIB KETISH BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚶 Olib ketish (Self-pickup)\n\n`
-        : `🔔 <b>YANGI TELEGRAM BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚗 Yetkazib berish (Telegram bot)\n\n`
-
-      const formatPaymentMethod = (method?: string): string => {
-        if (!method) return "Karta orqali o'tkazma"
-        switch (method.toUpperCase()) {
-          case "CARD_TRANSFER":
-            return "Karta orqali o'tkazma"
-          case "CASH":
-            return "Naqd pul"
-          case "TERMINAL":
-            return "Karta orqali terminalda"
-          default:
-            return method
-        }
-      }
-
-      const formatOrderStatus = (status?: string): string => {
-        if (isDineIn) return "Oshxonada tayyorlanmoqda (Zal)"
-        if (!status) return "Qabul qilindi"
-        switch (status.toUpperCase()) {
-          case "PENDING_PAYMENT":
-            return "To'lov / Chek kutilmoqda"
-          case "PAYMENT_REVIEW":
-            return "Chek tekshirilmoqda"
-          case "PREPARING":
-            return "Oshxonada tayyorlanmoqda"
-          case "READY_FOR_DELIVERY":
-            return "Yetkazishga tayyor"
-          case "DELIVERING":
-            return "Yo'lda (Yetkazilmoqda)"
-          case "COMPLETED":
-            return "Yetkazildi (Yakunlandi)"
-          case "CANCELLED":
-            return "Bekor qilindi"
-          default:
-            return status
-        }
-      }
-
-      const yandexGoLink =
-        order.latitude && order.longitude
-          ? `https://3.redirect.appmetrica.yandex.com/route?end-lat=${order.latitude}&end-lon=${order.longitude}&tariffClass=econom&ref=fullfood&appmetrica_tracking_id=1178268795219780156&lang=uz`
-          : null
-
-      const text = headerTitle +
-        `👤 <b>Mijoz:</b> ${order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum")}\n` +
-        (!isDineIn && order.customerPhone && order.customerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${order.customerPhone}\n` : "") +
-        (order.extraPhone ? `📱 <b>Qo'shimcha tel:</b> ${order.extraPhone}\n` : "") +
-        (!isDineIn && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
-        (!isDineIn && buildingInfo ? `${buildingInfo}\n` : "") +
-        (!isDineIn && yandexGoLink ? `🚕 <b>Yandex Go:</b> ${yandexGoLink}\n` : "") +
-        (order.notes ? `💬 <b>Izoh:</b> ${order.notes}\n` : "") +
-        `\n📋 <b>Taomlar tarkibi:</b>\n${itemsText}\n` +
-        (!isDineIn && containersText ? `${containersText}\n` : "\n") +
-        `💰 <b>Taomlar:</b> ${Number(order.subtotal || 0).toLocaleString()} so'm\n` +
-        (Number(order.packagingFee || 0) > 0 ? `📦 <b>Qadoqlash (idishlar):</b> ${Number(order.packagingFee || 0).toLocaleString()} so'm\n` : "") +
-        (!isDineIn && Number(order.deliveryFee || 0) > 0 ? `🚗 <b>Taxminiy yetkazish (taksiga):</b> ~${Number(order.deliveryFee || 0).toLocaleString()} so'm (Alohida taksiga to'lanadi)\n` : "") +
-        `💵 <b>JAMI RESTORAN TO'LOVI:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
-        `💳 <b>To'lov usuli:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
-        `⏱ <b>Holat:</b> ${formatOrderStatus(order.status)}`
-
-      const inlineKeyboard: any[] = []
-      if (yandexGoLink) {
-        inlineKeyboard.push([
-          {
-            text: "🚕 Yandex Go (Taksi chaqirish)",
-            url: yandexGoLink,
-          },
-        ])
-        inlineKeyboard.push([
-          {
-            text: "🗺 Yandex Xarita (Pin)",
-            url: `https://yandex.uz/maps/?pt=${order.longitude},${order.latitude}&z=17&l=map`,
-          },
-          {
-            text: "📍 Google Maps (Pin)",
-            url: `https://www.google.com/maps/search/?api=1&query=${order.latitude},${order.longitude}`,
-          },
-        ])
-      }
+      const { text, inlineKeyboard } = this.buildOrderNotificationDetails(order, false)
 
       await this.callApi("sendMessage", {
         chat_id: channel,
@@ -423,47 +443,61 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // Forward Uploaded Receipt Photo to Telegram Orders Channel
+  // Forward Uploaded Receipt Photo to Telegram Orders Channel with complete order details
   async sendReceiptNotification(order: any, receiptImageUrl: string) {
     try {
       const channel = this.ordersChannelId
       if (!channel) return
 
-      const caption = `🧾 <b>TO'LOV CHEKI YUKLANDI!</b>\n\n` +
-        `📌 <b>Buyurtma:</b> #${order.orderNumber}\n` +
-        `👤 <b>Mijoz:</b> ${order.customerName} (${order.customerPhone})\n` +
-        (order.extraPhone ? `📱 <b>Qo'shimcha tel:</b> ${order.extraPhone}\n` : "") +
-        `💵 <b>To'lov summasi:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
-        `💳 <b>To'lov turi:</b> ${order.paymentMethod === "CARD_TRANSFER" ? "Karta orqali o'tkazma" : order.paymentMethod === "CASH" ? "Naqd pul" : order.paymentMethod === "TERMINAL" ? "Terminal" : order.paymentMethod || "Karta"}\n` +
-        `\n<i>Kassir/Admin iltimos, to'lovni tekshirib tasdiqlang.</i>`
+      const { text, shortCaption, inlineKeyboard } = this.buildOrderNotificationDetails(order, true)
 
       const fullUrl = receiptImageUrl.startsWith("http")
         ? receiptImageUrl
         : `https://api.full-food.hotel-familyhouse.uz${receiptImageUrl.startsWith("/") ? "" : "/"}${receiptImageUrl}`
 
+      const isLong = text.length > 1000
+      const caption = isLong ? shortCaption : text
+      const replyMarkup = isLong ? undefined : (inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined)
+
+      let sentMsg: any = null
       if (receiptImageUrl.toLowerCase().endsWith(".pdf")) {
-        await this.callApi("sendDocument", {
+        sentMsg = await this.callApi("sendDocument", {
           chat_id: channel,
           document: fullUrl,
           caption,
           parse_mode: "HTML",
+          reply_markup: replyMarkup,
         })
       } else {
-        const photoRes = await this.callApi("sendPhoto", {
+        sentMsg = await this.callApi("sendPhoto", {
           chat_id: channel,
           photo: fullUrl,
           caption,
           parse_mode: "HTML",
+          reply_markup: replyMarkup,
         })
 
         // If photo sending failed (e.g. invalid format), fallback to message with link
-        if (!photoRes || !photoRes.ok) {
-          await this.callApi("sendMessage", {
+        if (!sentMsg || !sentMsg.ok) {
+          sentMsg = await this.callApi("sendMessage", {
             chat_id: channel,
             text: `${caption}\n\n🖼 <b>Chek havolasi:</b> ${fullUrl}`,
             parse_mode: "HTML",
+            reply_markup: replyMarkup,
           })
         }
+      }
+
+      // If details were too long to fit in photo caption, send full details as a follow-up message
+      if (isLong) {
+        await this.callApi("sendMessage", {
+          chat_id: channel,
+          text,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+          reply_to_message_id: sentMsg?.result?.message_id,
+          reply_markup: inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined,
+        })
       }
     } catch (err) {
       this.logger.error(`Error sending receipt notification to channel: ${err}`)

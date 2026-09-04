@@ -177,8 +177,17 @@ export class OrdersService {
 
     const savedOrder = await this.orderRepo.save(order)
 
-    // Notify Telegram channel asynchronously
-    this.botService.sendOrderNotification(savedOrder)
+    // Notify Telegram channel asynchronously:
+    // Only send immediately to group if order is already paid (e.g. from balance) or DINE_IN (cashier).
+    // For online card transfer orders, we wait until the user uploads the receipt so that orders and checks are never mixed up!
+    const requiresReceipt = savedOrder.paymentMethod === "CARD_TRANSFER" && !isPaidFromBalance
+
+    if (!requiresReceipt) {
+      this.botService.sendOrderNotification(savedOrder)
+    } else {
+      // Notify customer privately in Telegram bot that order is received
+      this.botService.notifyUserOrderCreated(savedOrder)
+    }
 
     // Emit Real-Time WebSocket event to Cashier & Admin
     this.ordersGateway.emitNewOrder(savedOrder)
@@ -196,8 +205,9 @@ export class OrdersService {
     order.paymentStatus = "REVIEW" as PaymentStatus
 
     const savedOrder = await this.orderRepo.save(order)
+    savedOrder.items = order.items
 
-    // Notify Telegram channel with receipt photo & notify user
+    // Notify Telegram channel with receipt photo + complete order details & notify user
     this.botService.sendReceiptNotification(savedOrder, receiptImageUrl)
     this.botService.notifyUserReceiptUploaded(savedOrder)
 
