@@ -67,6 +67,9 @@ export class DatabaseModule implements OnModuleInit {
         await this.dataSource.query("ALTER TABLE products ADD COLUMN soldCount INTEGER DEFAULT 0;")
       } catch (_) {}
       try {
+        await this.dataSource.query("ALTER TABLE products ADD COLUMN isDeleted BOOLEAN DEFAULT 0;")
+      } catch (_) {}
+      try {
         await this.dataSource.query(`
           UPDATE products 
           SET packagingLevel = 0 

@@ -78,12 +78,15 @@ export class OrdersService {
 
       let itemCostPrice = 0
       if (item.productId) {
-        try {
-          const product = await this.productRepo.findOne({ where: { id: item.productId } })
-          if (product && product.costPrice) {
+        const product = await this.productRepo.findOne({ where: { id: item.productId } })
+        if (product) {
+          if (product.isActive === false) {
+            throw new BadRequestException(`"${product.name}" hozirda vaqtincha sotuvda mavjud emas`)
+          }
+          if (product.costPrice) {
             itemCostPrice = Number(product.costPrice) || 0
           }
-        } catch (_) {}
+        }
       }
       const itemTotalCost = itemCostPrice * quantity * portionCount
 

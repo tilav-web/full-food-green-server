@@ -69,6 +69,9 @@ export class Product {
   @Column({ default: true })
   isActive: boolean
 
+  @Column({ default: false })
+  isDeleted: boolean
+
   @Column({ type: "boolean", default: false })
   isPopular: boolean
 

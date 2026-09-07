@@ -36,7 +36,7 @@ export class ProductsService {
     return cat
   }
 
-  async getAllProducts(query?: { categoryId?: string; search?: string; type?: ProductType; isPopular?: boolean }) {
+  async getAllProducts(query?: { categoryId?: string; search?: string; type?: ProductType; isPopular?: boolean; isActive?: boolean }) {
     // Dynamic calculation: Query top 10 best-selling products from order items
     let topSellingIds: string[] = []
     const soldCountMap = new Map<string, number>()
@@ -68,7 +68,11 @@ export class ProductsService {
       .createQueryBuilder("product")
       .leftJoinAndSelect("product.category", "category")
       .leftJoinAndSelect("product.unit", "unit")
-      .where("product.isActive = :isActive", { isActive: true })
+      .where("product.isDeleted = :isDeleted", { isDeleted: false })
+
+    if (query?.isActive !== undefined) {
+      qb.andWhere("product.isActive = :isActive", { isActive: query.isActive })
+    }
 
     if (query?.categoryId) {
       qb.andWhere("product.categoryId = :categoryId", { categoryId: query.categoryId })
@@ -136,7 +140,7 @@ export class ProductsService {
 
   async getProductBySlug(slug: string) {
     let product = await this.productRepo.findOne({
-      where: [{ slug, isActive: true }, { id: slug, isActive: true }],
+      where: [{ slug, isDeleted: false }, { id: slug, isDeleted: false }],
       relations: ["category", "unit"],
     })
 
@@ -206,7 +210,14 @@ export class ProductsService {
 
   async deleteProduct(id: string) {
     const p = await this.getProductById(id)
+    p.isDeleted = true
     p.isActive = false
+    return this.productRepo.save(p)
+  }
+
+  async toggleProductActive(id: string, isActive?: boolean) {
+    const p = await this.getProductById(id)
+    p.isActive = isActive !== undefined ? Boolean(isActive) : !p.isActive
     return this.productRepo.save(p)
   }
 

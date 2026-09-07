@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from "@nestjs/common"
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query } from "@nestjs/common"
 import { ProductsService } from "./products.service"
 import { ProductType } from "../../entities/product.entity"
 
@@ -76,13 +76,15 @@ export class ProductsController {
     @Query("categoryId") categoryId?: string,
     @Query("search") search?: string,
     @Query("type") type?: ProductType,
-    @Query("isPopular") isPopular?: string
+    @Query("isPopular") isPopular?: string,
+    @Query("isActive") isActive?: string
   ) {
     return this.productsService.getAllProducts({
       categoryId,
       search,
       type,
       isPopular: isPopular === "true" ? true : undefined,
+      isActive: isActive === "true" ? true : isActive === "false" ? false : undefined,
     })
   }
 
@@ -99,6 +101,17 @@ export class ProductsController {
   @Put(":id")
   async updateProduct(@Param("id") id: string, @Body() body: any) {
     return this.productsService.updateProduct(id, body)
+  }
+
+  @Patch(":id/toggle-active")
+  async toggleProductActive(@Param("id") id: string, @Body() body?: { isActive?: boolean }) {
+    return this.productsService.toggleProductActive(id, body?.isActive)
+  }
+
+  @Patch(":id/availability")
+  async updateProductAvailability(@Param("id") id: string, @Body() body: { isActive?: boolean; isAvailable?: boolean }) {
+    const val = body.isActive !== undefined ? body.isActive : body.isAvailable
+    return this.productsService.toggleProductActive(id, val)
   }
 
   @Delete(":id")
