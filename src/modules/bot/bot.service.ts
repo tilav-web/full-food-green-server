@@ -358,13 +358,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    const isDoorToDoor = order.notes?.includes("ESHIKGACHA") || false
+    const deliveryTypeLabel = isDoorToDoor
+      ? "🚗🚪 Yetkazib berish (ESHIKGACHA)"
+      : "🚗 Yetkazib berish"
+
     const headerTitle = isReceipt
-      ? `🧾 <b>YANGI TO'LANGAN BUYURTMA & CHEK #${order.orderNumber}</b>\n🛎 <b>Turi:</b> ${isPickup ? "🚶 Olib ketish" : "🚗 Yetkazib berish"}\n\n`
+      ? `🧾 <b>YANGI TO'LANGAN BUYURTMA & CHEK #${order.orderNumber}</b>\n🛎 <b>Turi:</b> ${isPickup ? "🚶 Olib ketish" : deliveryTypeLabel}\n\n`
       : isDineIn
       ? `🍽 <b>YANGI ZAL (KASSA) BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🍽 Zalda iste'mol (Kassa POS)\n\n`
       : isPickup
       ? `🚶 <b>YANGI OLIB KETISH BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚶 Olib ketish (Self-pickup)\n\n`
-      : `🔔 <b>YANGI TELEGRAM BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚗 Yetkazib berish (Telegram bot)\n\n`
+      : `🔔 <b>YANGI TELEGRAM BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> ${deliveryTypeLabel} (Telegram bot)\n\n`
 
     const yandexGoLink =
       order.latitude && order.longitude
@@ -383,14 +388,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       (!isDineIn && containersText ? `${containersText}\n` : "\n") +
       `💰 <b>Taomlar:</b> ${Number(order.subtotal || 0).toLocaleString()} so'm\n` +
       (Number(order.packagingFee || 0) > 0 ? `📦 <b>Qadoqlash (idishlar):</b> ${Number(order.packagingFee || 0).toLocaleString()} so'm\n` : "") +
-      (!isDineIn && !isPickup ? `🚗 <b>Yetkazish:</b> Alohida to'lanadi (taksiga)\n` : "") +
-      `💵 <b>JAMI RESTORAN TO'LOVI:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
+      (!isDineIn && !isPickup ? `🚗 <b>Yetkazish:</b> ${isDoorToDoor ? "🚪 <b>ESHIKGACHA (Kuryer eshik oldiga olib chiqadi)</b>" : "Alohida to'lanadi (kuryerga)"}\n` : "") +
+      `💵 <b>JAMI TO'LOV:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
       `💳 <b>To'lov usuli:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
       `⏱ <b>Holat:</b> ${isReceipt ? "⚠️ Chek tekshirilmoqda" : formatOrderStatus(order.status)}` +
       (isReceipt ? `\n\n<i>Kassir/Admin iltimos, to'lovni tekshirib tasdiqlang.</i>` : "")
 
     const shortCaption = `🧾 <b>TO'LOV CHEKI YUKLANDI #${order.orderNumber}</b>\n\n` +
       `👤 <b>Mijoz:</b> ${order.customerName || "Noma'lum"} (${order.customerPhone || ""})\n` +
+      (!isDineIn && !isPickup ? `🛎 <b>Turi:</b> ${deliveryTypeLabel}\n` : "") +
       (!isDineIn && !isPickup && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
       `💵 <b>Jami to'lov:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
       `💳 <b>To'lov turi:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
