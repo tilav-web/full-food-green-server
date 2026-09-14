@@ -51,12 +51,13 @@ export class ProductsService {
         .addSelect("SUM(item.quantity)", "soldCount")
         .groupBy("item.productId")
         .orderBy("soldCount", "DESC")
-        .limit(10)
         .getRawMany()
 
       for (const r of rawSales) {
         if (r.productId) {
-          topSellingIds.push(r.productId)
+          if (topSellingIds.length < 10) {
+            topSellingIds.push(r.productId)
+          }
           soldCountMap.set(r.productId, Number(r.soldCount) || 0)
         }
       }
