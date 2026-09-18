@@ -9,6 +9,8 @@ import {
 } from "@nestjs/websockets"
 import { Server, Socket } from "socket.io"
 import { Injectable, Logger } from "@nestjs/common"
+import { ConfigService } from "@nestjs/config"
+import { formatReceiptPlainText } from "./receipt.formatter"
 
 @Injectable()
 @WebSocketGateway({
@@ -22,6 +24,11 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server
 
   private readonly logger = new Logger("OrdersGateway")
+  private readonly printerSecret: string
+
+  constructor(private readonly configService: ConfigService) {
+    this.printerSecret = this.configService.get<string>("PRINTER_SECRET_KEY") || "fullfood_printer_secret_2026"
+  }
 
   handleConnection(client: Socket) {
     this.logger.log(`WebSocket client connected: ${client.id}`)
@@ -53,6 +60,22 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { status: "joined", room: "cashier_room" }
   }
 
+  // Printer Agent joins printer room with security secret key
+  @SubscribeMessage("join_printer_agent")
+  handleJoinPrinterAgent(
+    @MessageBody() data: { secret?: string; printerName?: string; version?: string },
+    @ConnectedSocket() client: Socket
+  ) {
+    if (data?.secret && data.secret === this.printerSecret) {
+      client.join("printer_agent_room")
+      this.logger.log(`🖨️ Printer Agent authenticated & joined printer_agent_room (Client: ${client.id}, Printer: ${data.printerName || 'default'})`)
+      return { ok: true, message: "Muvaffaqiyatli ulandi" }
+    } else {
+      this.logger.warn(`❌ Printer Agent unauthorized join attempt (Client: ${client.id})`)
+      return { ok: false, message: "Noto'g'ri maxfiy kalit (secret key)" }
+    }
+  }
+
   // Admin joins admin room for live dashboard updates
   @SubscribeMessage("join_admin")
   handleJoinAdmin(@ConnectedSocket() client: Socket) {
@@ -66,6 +89,24 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`Emitting new_order for order #${order.id}`)
     this.server.to("cashier_room").emit("new_order", order)
     this.server.to("admin_room").emit("new_order", order)
+  }
+
+  // Directly emit print job to Printer Agent (Xprinter Desktop App)
+  emitPrintOrder(order: any, openDrawer: boolean = false) {
+    try {
+      const plainText = formatReceiptPlainText(order, "80mm")
+      this.logger.log(`🖨️ Emitting print_order to printer_agent_room for Order #${order.orderNumber}`)
+      this.server.to("printer_agent_room").emit("print_order", {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        text: plainText,
+        openDrawer,
+        order,
+        timestamp: new Date().toISOString(),
+      })
+    } catch (err) {
+      this.logger.error(`Failed to emit print_order for #${order.orderNumber}: ${err}`)
+    }
   }
 
   // Emit when an order is updated (status change, taxi call, receipt verified, etc.)
@@ -83,3 +124,4 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
     })
   }
 }
+

@@ -187,6 +187,8 @@ export class OrdersService {
 
     if (!requiresReceipt) {
       this.botService.sendOrderNotification(savedOrder)
+      // Synchronously emit print order to Printer Agent for immediately paid orders
+      this.ordersGateway.emitPrintOrder(savedOrder, savedOrder.paymentMethod === "CASH")
     } else {
       // Notify customer privately in Telegram bot that order is received
       this.botService.notifyUserOrderCreated(savedOrder)
@@ -213,6 +215,9 @@ export class OrdersService {
     // Notify Telegram channel with receipt photo + complete order details & notify user
     this.botService.sendReceiptNotification(savedOrder, receiptImageUrl)
     this.botService.notifyUserReceiptUploaded(savedOrder)
+
+    // Synchronously emit print order to Printer Agent now that receipt is uploaded & sent to Telegram!
+    this.ordersGateway.emitPrintOrder(savedOrder, false)
 
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)
@@ -295,6 +300,9 @@ export class OrdersService {
     // Notify Telegram bot channel & customer
     this.botService.sendOrderNotification(savedOrder)
     this.botService.notifyOrderStatusChange(savedOrder, "PREPARING")
+
+    // Synchronously emit print order to Printer Agent
+    this.ordersGateway.emitPrintOrder(savedOrder, false)
 
     // Emit Real-Time WebSocket event
     this.ordersGateway.emitOrderUpdated(savedOrder)

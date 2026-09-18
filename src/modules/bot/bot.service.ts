@@ -33,6 +33,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
+    const disablePolling = this.configService.get<string>("DISABLE_BOT_POLLING") === "true"
+    if (disablePolling) {
+      this.logger.log("🤖 Telegram Bot polling is disabled via DISABLE_BOT_POLLING=true (safe for local development).")
+      return
+    }
+
     this.startPolling()
     try {
       await this.callApi("setChatMenuButton", {
@@ -282,7 +288,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       itemsText = order.items
         .map(
           (it: any) =>
-            `  • <b>${it.quantity}x</b> ${it.name} — <i>${(it.unitPrice * it.quantity).toLocaleString()} so'm</i>`
+            `  • <b>${it.quantity}x</b> ${this.escapeHtml(it.name)} — <i>${(it.unitPrice * it.quantity).toLocaleString()} so'm</i>`
         )
         .join("\n")
     }
@@ -295,11 +301,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           containersText = `\n🍱 <b>IDISHLARGA TAQSIMOT (${containers.length} ta boks):</b>\n` +
             containers
               .map((c: any, i: number) => {
-                const label = c.label ? ` (${c.label})` : ""
+                const label = c.label ? ` (${this.escapeHtml(c.label)})` : ""
                 const cItems = (c.items || [])
-                  .map((it: any) => `    ▫️ <b>${it.quantity}x</b> ${it.name}`)
+                  .map((it: any) => `    ▫️ <b>${it.quantity}x</b> ${this.escapeHtml(it.name)}`)
                   .join("\n")
-                return `  📦 <b>${c.name || `${i + 1}-Idish`}${label}:</b>\n${cItems || "    (Bo'sh)"}`
+                return `  📦 <b>${this.escapeHtml(c.name || `${i + 1}-Idish`)}${label}:</b>\n${cItems || "    (Bo'sh)"}`
               })
               .join("\n\n") + "\n"
         }
@@ -309,9 +315,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
 
     const buildingInfo = [
-      order.building ? `🏢 <b>Dom:</b> ${order.building}` : null,
-      order.floor ? `<b>Qavat:</b> ${order.floor}` : null,
-      order.apartment ? `<b>Xona:</b> ${order.apartment}` : null,
+      order.building ? `🏢 <b>Dom:</b> ${this.escapeHtml(order.building)}` : null,
+      order.floor ? `<b>Qavat:</b> ${this.escapeHtml(order.floor)}` : null,
+      order.apartment ? `<b>Xona:</b> ${this.escapeHtml(order.apartment)}` : null,
     ]
       .filter(Boolean)
       .join(" | ")
@@ -376,14 +382,20 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         ? `https://3.redirect.appmetrica.yandex.com/route?end-lat=${order.latitude}&end-lon=${order.longitude}&tariffClass=econom&ref=fullfood&appmetrica_tracking_id=1178268795219780156&lang=uz`
         : null
 
+    const safeCustomerName = this.escapeHtml(order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum"))
+    const safeCustomerPhone = order.customerPhone ? this.escapeHtml(order.customerPhone) : ""
+    const safeExtraPhone = order.extraPhone ? this.escapeHtml(order.extraPhone) : ""
+    const safeAddress = order.address ? this.escapeHtml(order.address) : ""
+    const safeNotes = order.notes ? this.escapeHtml(order.notes) : ""
+
     const text = headerTitle +
-      `👤 <b>Mijoz:</b> ${order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum")}\n` +
-      (!isDineIn && order.customerPhone && order.customerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${order.customerPhone}\n` : "") +
-      (order.extraPhone ? `📱 <b>Qo'shimcha tel:</b> ${order.extraPhone}\n` : "") +
-      (!isDineIn && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
+      `👤 <b>Mijoz:</b> ${safeCustomerName}\n` +
+      (!isDineIn && safeCustomerPhone && safeCustomerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${safeCustomerPhone}\n` : "") +
+      (safeExtraPhone ? `📱 <b>Qo'shimcha tel:</b> ${safeExtraPhone}\n` : "") +
+      (!isDineIn && safeAddress ? `📍 <b>Manzil:</b> ${safeAddress}\n` : "") +
       (!isDineIn && buildingInfo ? `${buildingInfo}\n` : "") +
       (!isDineIn && yandexGoLink ? `🚕 <b>Yandex Go:</b> ${yandexGoLink}\n` : "") +
-      (order.notes ? `💬 <b>Izoh:</b> ${order.notes}\n` : "") +
+      (safeNotes ? `💬 <b>Izoh:</b> ${safeNotes}\n` : "") +
       `\n📋 <b>Taomlar tarkibi:</b>\n${itemsText}\n` +
       (!isDineIn && containersText ? `${containersText}\n` : "\n") +
       `💰 <b>Taomlar:</b> ${Number(order.subtotal || 0).toLocaleString()} so'm\n` +
@@ -395,9 +407,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       (isReceipt ? `\n\n<i>Kassir/Admin iltimos, to'lovni tekshirib tasdiqlang.</i>` : "")
 
     const shortCaption = `🧾 <b>TO'LOV CHEKI YUKLANDI #${order.orderNumber}</b>\n\n` +
-      `👤 <b>Mijoz:</b> ${order.customerName || "Noma'lum"} (${order.customerPhone || ""})\n` +
+      `👤 <b>Mijoz:</b> ${safeCustomerName} (${safeCustomerPhone})\n` +
       (!isDineIn && !isPickup ? `🛎 <b>Turi:</b> ${deliveryTypeLabel}\n` : "") +
-      (!isDineIn && !isPickup && order.address ? `📍 <b>Manzil:</b> ${order.address}\n` : "") +
+      (!isDineIn && !isPickup && safeAddress ? `📍 <b>Manzil:</b> ${safeAddress}\n` : "") +
       `💵 <b>Jami to'lov:</b> <b>${Number(order.totalAmount || 0).toLocaleString()} so'm</b>\n` +
       `💳 <b>To'lov turi:</b> ${formatPaymentMethod(order.paymentMethod)}\n` +
       `⏱ <b>Holat:</b> ⚠️ Chek tekshirilmoqda\n\n` +
