@@ -545,6 +545,27 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // Send daily sales summary report to Telegram orders group
+  async sendDailyReportNotification(reportHtml: string) {
+    try {
+      const channel = this.ordersChannelId
+      if (!channel) {
+        this.logger.warn("No ordersChannelId configured for daily report")
+        return null
+      }
+      this.logger.log(`📊 Sending daily sales report to channel ${channel}...`)
+      return await this.callApi("sendMessage", {
+        chat_id: channel,
+        text: reportHtml,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      })
+    } catch (err) {
+      this.logger.error(`Error sending daily report notification to channel: ${err}`)
+      return null
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // CUSTOMER (ORDER OWNER) PRIVATE BOT NOTIFICATIONS
   // ---------------------------------------------------------------------------
