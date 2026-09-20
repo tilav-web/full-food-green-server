@@ -4,6 +4,8 @@ import { InjectRepository } from "@nestjs/typeorm"
 import { Repository, Not, IsNull } from "typeorm"
 import { AuthService } from "../auth/auth.service"
 import { User } from "../../entities/user.entity"
+import * as fs from "fs"
+import * as path from "path"
 
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
@@ -39,6 +41,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return
     }
 
+    try {
+      // Clear any conflicting webhooks before polling to ensure 409 Conflict never occurs
+      await this.callApi("deleteWebhook", { drop_pending_updates: false })
+    } catch (e) {
+      this.logger.warn("Could not clear webhook on init:", e)
+    }
+
     this.startPolling()
     try {
       await this.callApi("setChatMenuButton", {
@@ -71,8 +80,25 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`Telegram API [${method}] returned !ok: ${JSON.stringify(json)}`)
       }
       return json
-    } catch (err) {
-      this.logger.error(`Error calling Telegram API [${method}]: ${err}`)
+    } catch (err: any) {
+      this.logger.error(`Error calling Telegram API [${method}]: ${err?.message || err}`)
+      return null
+    }
+  }
+
+  private async callApiMultipart(method: string, formData: FormData) {
+    try {
+      const res = await fetch(`${this.apiUrl}/${method}`, {
+        method: "POST",
+        body: formData,
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        this.logger.warn(`Telegram API multipart [${method}] returned !ok: ${JSON.stringify(json)}`)
+      }
+      return json
+    } catch (err: any) {
+      this.logger.error(`Error calling Telegram API multipart [${method}]: ${err?.message || err}`)
       return null
     }
   }
@@ -377,10 +403,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       ? `🚶 <b>YANGI OLIB KETISH BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> 🚶 Olib ketish (Self-pickup)\n\n`
       : `🔔 <b>YANGI TELEGRAM BUYURTMASI #${order.orderNumber}</b>\n🛎 <b>Turi:</b> ${deliveryTypeLabel} (Telegram bot)\n\n`
 
-    const yandexGoLink =
-      order.latitude && order.longitude
-        ? `https://3.redirect.appmetrica.yandex.com/route?end-lat=${order.latitude}&end-lon=${order.longitude}&tariffClass=econom&ref=fullfood&appmetrica_tracking_id=1178268795219780156&lang=uz`
-        : null
+    const RESTAURANT_LAT = 38.83825
+    const RESTAURANT_LNG = 65.792222
+
+    // Check if order has real customer coordinates (not the restaurant itself and not 0,0)
+    const hasCustomerCoords =
+      Boolean(order.latitude && order.longitude) &&
+      (Math.abs(Number(order.latitude) - RESTAURANT_LAT) > 0.0002 ||
+        Math.abs(Number(order.longitude) - RESTAURANT_LNG) > 0.0002)
+
+    // Yandex Go taxi route: Starts from Full Food restaurant and ends at customer location!
+    const yandexGoLink = hasCustomerCoords
+      ? `https://3.redirect.appmetrica.yandex.com/route?start-lat=${RESTAURANT_LAT}&start-lon=${RESTAURANT_LNG}&end-lat=${order.latitude}&end-lon=${order.longitude}&tariffClass=econom&ref=fullfood&appmetrica_tracking_id=1178268795219780156&lang=uz`
+      : null
 
     const safeCustomerName = this.escapeHtml(order.customerName || (isDineIn ? "Zal mijozi" : "Noma'lum"))
     const safeCustomerPhone = order.customerPhone ? this.escapeHtml(order.customerPhone) : ""
@@ -393,6 +428,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       (!isDineIn && safeCustomerPhone && safeCustomerPhone !== "+998 00 000 00 00" ? `📞 <b>Asosiy tel:</b> ${safeCustomerPhone}\n` : "") +
       (safeExtraPhone ? `📱 <b>Qo'shimcha tel:</b> ${safeExtraPhone}\n` : "") +
       (!isDineIn && safeAddress ? `📍 <b>Manzil:</b> ${safeAddress}\n` : "") +
+      (!isDineIn && !hasCustomerCoords && !isPickup ? `ℹ️ <i>Xarita nuqtasi yo'q (mijoz kiritgan matnli manzil)</i>\n` : "") +
       (!isDineIn && buildingInfo ? `${buildingInfo}\n` : "") +
       (!isDineIn && yandexGoLink ? `🚕 <b>Yandex Go:</b> ${yandexGoLink}\n` : "") +
       (safeNotes ? `💬 <b>Izoh:</b> ${safeNotes}\n` : "") +
@@ -416,20 +452,20 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       `<i>Batafsil buyurtma ma'lumoti pastda 👇</i>`
 
     const inlineKeyboard: any[] = []
-    if (yandexGoLink) {
+    if (yandexGoLink && hasCustomerCoords) {
       inlineKeyboard.push([
         {
-          text: "🚕 Yandex Go (Taksi chaqirish)",
+          text: "🚕 Yandex Go (Restorandan mijozgacha)",
           url: yandexGoLink,
         },
       ])
       inlineKeyboard.push([
         {
-          text: "🗺 Yandex Xarita (Pin)",
+          text: "🗺 Yandex Xarita (Mijoz)",
           url: `https://yandex.uz/maps/?pt=${order.longitude},${order.latitude}&z=17&l=map`,
         },
         {
-          text: "📍 Google Maps (Pin)",
+          text: "📍 Google Maps (Mijoz)",
           url: `https://www.google.com/maps/search/?api=1&query=${order.latitude},${order.longitude}`,
         },
       ])
@@ -477,26 +513,80 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       const caption = isLong ? shortCaption : text
       const replyMarkup = isLong ? undefined : (inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined)
 
-      let sentMsg: any = null
-      if (receiptImageUrl.toLowerCase().endsWith(".pdf")) {
-        sentMsg = await this.callApi("sendDocument", {
-          chat_id: channel,
-          document: fullUrl,
-          caption,
-          parse_mode: "HTML",
-          reply_markup: replyMarkup,
-        })
-      } else {
-        sentMsg = await this.callApi("sendPhoto", {
-          chat_id: channel,
-          photo: fullUrl,
-          caption,
-          parse_mode: "HTML",
-          reply_markup: replyMarkup,
-        })
+      // 1. Locate the file on the server disk for fast & reliable direct multipart upload
+      const filename = path.basename(receiptImageUrl.split("?")[0])
+      const possibleDirs = [
+        this.configService.get<string>("UPLOADS_DIR"),
+        "/home/full_food/server/uploads",
+        path.resolve(process.cwd(), "uploads"),
+        path.resolve(__dirname, "../../../uploads"),
+      ].filter(Boolean) as string[]
 
-        // If photo sending failed (e.g. invalid format), fallback to message with link
+      let localFilePath: string | null = null
+      for (const dir of possibleDirs) {
+        const candidate = path.join(dir, filename)
+        if (fs.existsSync(candidate)) {
+          localFilePath = candidate
+          break
+        }
+      }
+
+      let sentMsg: any = null
+
+      if (localFilePath) {
+        try {
+          const fileBuffer = fs.readFileSync(localFilePath)
+          const ext = path.extname(localFilePath).toLowerCase()
+          const isPdf = ext === ".pdf"
+          const mimeType = isPdf ? "application/pdf" : (ext === ".png" ? "image/png" : "image/jpeg")
+          const fileBlob = new Blob([fileBuffer], { type: mimeType })
+
+          const formData = new FormData()
+          formData.append("chat_id", channel)
+          formData.append("caption", caption)
+          formData.append("parse_mode", "HTML")
+          if (replyMarkup) {
+            formData.append("reply_markup", JSON.stringify(replyMarkup))
+          }
+
+          if (isPdf) {
+            formData.append("document", fileBlob, filename)
+            sentMsg = await this.callApiMultipart("sendDocument", formData)
+          } else {
+            formData.append("photo", fileBlob, filename)
+            sentMsg = await this.callApiMultipart("sendPhoto", formData)
+          }
+        } catch (uploadErr) {
+          this.logger.error(`Error in local multipart receipt upload: ${uploadErr}`)
+        }
+      }
+
+      // 2. If direct local upload didn't succeed (e.g. file not found or telegram error), try URL or text fallback
+      if (!sentMsg || !sentMsg.ok) {
+        // Slight backoff to allow socket reset
+        await new Promise((r) => setTimeout(r, 600))
+
+        if (receiptImageUrl.toLowerCase().endsWith(".pdf")) {
+          sentMsg = await this.callApi("sendDocument", {
+            chat_id: channel,
+            document: fullUrl,
+            caption,
+            parse_mode: "HTML",
+            reply_markup: replyMarkup,
+          })
+        } else {
+          sentMsg = await this.callApi("sendPhoto", {
+            chat_id: channel,
+            photo: fullUrl,
+            caption,
+            parse_mode: "HTML",
+            reply_markup: replyMarkup,
+          })
+        }
+
+        // Final fallback to text message with photo link
         if (!sentMsg || !sentMsg.ok) {
+          await new Promise((r) => setTimeout(r, 600))
           sentMsg = await this.callApi("sendMessage", {
             chat_id: channel,
             text: `${caption}\n\n🖼 <b>Chek havolasi:</b> ${fullUrl}`,
@@ -507,13 +597,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
 
       // If details were too long to fit in photo caption, send full details as a follow-up message
-      if (isLong) {
+      if (isLong && sentMsg?.result?.message_id) {
         await this.callApi("sendMessage", {
           chat_id: channel,
           text,
           parse_mode: "HTML",
           disable_web_page_preview: true,
-          reply_to_message_id: sentMsg?.result?.message_id,
+          reply_to_message_id: sentMsg.result.message_id,
           reply_markup: inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined,
         })
       }

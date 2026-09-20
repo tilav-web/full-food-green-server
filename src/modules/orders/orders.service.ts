@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common"
+import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
 import { Order, OrderStatus, OrderType, PaymentStatus } from "../../entities/order.entity"
@@ -12,6 +12,8 @@ import { OrdersGateway } from "./orders.gateway"
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name)
+
   constructor(
     @InjectRepository(Order) private orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private itemRepo: Repository<OrderItem>,
@@ -213,8 +215,12 @@ export class OrdersService {
     savedOrder.items = order.items
 
     // Notify Telegram channel with receipt photo + complete order details & notify user
-    this.botService.sendReceiptNotification(savedOrder, receiptImageUrl)
-    this.botService.notifyUserReceiptUploaded(savedOrder)
+    await this.botService.sendReceiptNotification(savedOrder, receiptImageUrl).catch((err) => {
+      this.logger.error(`Failed to send receipt notification to telegram: ${err?.message || err}`)
+    })
+    await this.botService.notifyUserReceiptUploaded(savedOrder).catch((err) => {
+      this.logger.error(`Failed to notify user on receipt upload: ${err?.message || err}`)
+    })
 
     // Synchronously emit print order to Printer Agent now that receipt is uploaded & sent to Telegram!
     this.ordersGateway.emitPrintOrder(savedOrder, false)
