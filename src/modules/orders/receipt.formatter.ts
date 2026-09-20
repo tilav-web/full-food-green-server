@@ -3,6 +3,8 @@
  * EXACT 1:1 REPLICA of client/src/lib/thermalPrintService.ts (generateReceiptPlainText)
  */
 
+import { BISTRO_LOGO_80MM, BISTRO_LOGO_58MM } from "./receipt.logo"
+
 function formatDateTime(dateStr?: string | Date) {
   const date = dateStr ? new Date(dateStr) : new Date()
   const d = date.toLocaleDateString("ru-RU", {
@@ -39,10 +41,7 @@ export function formatReceiptPlainText(order: any, paperWidth: "80mm" | "58mm" =
   }
 
   let out = ""
-  const bistroPad = Math.max(0, Math.floor((width - 14) / 2))
-  const cafePad = Math.max(0, Math.floor((width - 4) / 2))
-  out += " ".repeat(bistroPad) + "\x1bE\x01\x1d!\x11BISTRO!\x1d!\x00\x1bE\x00\n"
-  out += " ".repeat(cafePad) + "\x1bE\x01\x1d!\x01Cafe\x1d!\x00\x1bE\x00\n"
+  out += is80mm ? BISTRO_LOGO_80MM : BISTRO_LOGO_58MM
   out += center("Tel: +998 33 888 60 60") + "\n"
   out += center("Telegram: @fullfoodbot") + "\n"
   out += doubleSep + "\n"
