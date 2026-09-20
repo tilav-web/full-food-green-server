@@ -317,7 +317,7 @@ async function cleanAndSync() {
     { key: 'card_bank', value: 'Kapitalbank' },
     { key: 'restaurant_name', value: 'Full Food' },
     { key: 'restaurant_address', value: "Toshkent sh., Amir Temur shox ko'chasi 45" },
-    { key: 'restaurant_phone', value: '+998 71 200 00 20' },
+    { key: 'restaurant_phone', value: '+998 33 888 60 60' },
     { key: 'restaurant_lat', value: '41.311158' },
     { key: 'restaurant_lng', value: '69.279737' },
     { key: 'delivery_base_fee', value: '10000' },

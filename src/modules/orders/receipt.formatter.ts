@@ -39,24 +39,12 @@ export function formatReceiptPlainText(order: any, paperWidth: "80mm" | "58mm" =
   }
 
   let out = ""
-  if (is80mm) {
-    out += center("+----------------------------------+") + "\n"
-    out += center("|          * FULL FOOD *           |") + "\n"
-    out += center("|    SOG'LOM VA PARHEZ TAOMLAR     |") + "\n"
-    out += center("+----------------------------------+") + "\n"
-    out += center("Tel: +998 71 200 00 20") + "\n"
-    out += center("+998 33 888 60 60") + "\n"
-    out += center("Telegram: @fullfoodbot") + "\n"
-  } else {
-    out += center("+--------------------------+") + "\n"
-    out += center("|      * FULL FOOD *       |") + "\n"
-    out += center("|    SOG'LOM VA PARHEZ     |") + "\n"
-    out += center("+--------------------------+") + "\n"
-    out += center("Tel: +998 71 200 00 20") + "\n"
-    out += center("Telegram: @fullfoodbot") + "\n"
-  }
+  out += "\x1bE\x01" + center("* FULL FOOD *") + "\x1bE\x00\n"
+  out += center("SOG'LOM VA PARHEZ TAOMLAR") + "\n"
+  out += center("Tel: +998 33 888 60 60") + "\n"
+  out += center("Telegram: @fullfoodbot") + "\n"
   out += doubleSep + "\n"
-  out += center(`CHEK #${order.orderNumber}`) + "\n"
+  out += "\x1bE\x01" + center(`CHEK #${order.orderNumber}`) + "\x1bE\x00\n"
   out += center(`${date}  ${time}`) + "\n"
   out += separator + "\n"
   out += row("Buyurtma turi:", order.type === "DINE_IN" ? (order.tableNumber ? `ZALDA (#${order.tableNumber})` : "ZALDA (POS)") : order.type === "ONLINE_PICKUP" ? "OLIB KETISH" : "YETKAZIB BERISH") + "\n"
@@ -91,8 +79,9 @@ export function formatReceiptPlainText(order: any, paperWidth: "80mm" | "58mm" =
   if (deliveryFee > 0) {
     out += row("Yetkazib berish:", `${deliveryFee.toLocaleString()} so'm`) + "\n"
   }
-  out += separator + "\n"
-  out += row("JAMI TO'LOV:", `${Number(order.totalAmount || 0).toLocaleString()} SO'M`) + "\n"
+  out += doubleSep + "\n"
+  out += "\x1bE\x01\x1d!\x01" + row("JAMI TO'LOV:", `${Number(order.totalAmount || 0).toLocaleString()} SO'M`) + "\x1d!\x00\x1bE\x00\n"
+  out += doubleSep + "\n"
   out += row("To'lov usuli:", order.paymentMethod === "CARD_TRANSFER" ? "KARTA" : order.paymentMethod === "CASH" ? "NAQD PUL" : order.paymentMethod === "TERMINAL" ? "TERMINAL" : order.paymentMethod === "BALANCE" ? "MIJOZ BALANSI" : "KARTA") + "\n"
   out += row("To'lov holati:", "[V] TO'LANDI") + "\n"
   out += doubleSep + "\n"
