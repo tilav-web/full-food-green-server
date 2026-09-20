@@ -64,6 +64,21 @@ export class OrdersService {
       throw new BadRequestException("Buyurtmada hech qanday taom tanlanmagan")
     }
 
+    if (data.type === "ONLINE_DELIVERY") {
+      const lat = Number(data.latitude)
+      const lng = Number(data.longitude)
+      const RESTAURANT_LAT = 38.83825
+      const RESTAURANT_LNG = 65.792222
+      if (
+        !data.address?.trim() ||
+        !lat ||
+        !lng ||
+        (Math.abs(lat - RESTAURANT_LAT) < 0.0002 && Math.abs(lng - RESTAURANT_LNG) < 0.0002)
+      ) {
+        throw new BadRequestException("Yetkazib berish uchun aniq mijoz lokatsiyasi tanlanishi shart")
+      }
+    }
+
     const orderNumber = await this.generateOrderNumber()
 
     // Calculate totals
