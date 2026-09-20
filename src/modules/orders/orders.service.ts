@@ -204,8 +204,11 @@ export class OrdersService {
 
     if (!requiresReceipt) {
       this.botService.sendOrderNotification(savedOrder)
-      // Synchronously emit print order to Printer Agent for immediately paid orders
-      this.ordersGateway.emitPrintOrder(savedOrder, savedOrder.paymentMethod === "CASH")
+      // DINE_IN (POS) buyurtmalar uchun frontend (CashierView) autoPrintPosOrder orqali chek chiqaradi.
+      // Server emitPrintOrder DINE_IN uchun chaqirmaymiz — aks holda 2 ta chek chiqib ketadi!
+      if (savedOrder.type !== 'DINE_IN') {
+        this.ordersGateway.emitPrintOrder(savedOrder, savedOrder.paymentMethod === 'CASH')
+      }
     } else {
       // Notify customer privately in Telegram bot that order is received
       this.botService.notifyUserOrderCreated(savedOrder)
