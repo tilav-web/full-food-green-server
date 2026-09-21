@@ -204,11 +204,8 @@ export class OrdersService {
 
     if (!requiresReceipt) {
       this.botService.sendOrderNotification(savedOrder)
-      // DINE_IN (POS) buyurtmalar uchun frontend (CashierView) autoPrintPosOrder orqali chek chiqaradi.
-      // Server emitPrintOrder DINE_IN uchun chaqirmaymiz — aks holda 2 ta chek chiqib ketadi!
-      if (savedOrder.type !== 'DINE_IN') {
-        this.ordersGateway.emitPrintOrder(savedOrder, savedOrder.paymentMethod === 'CASH')
-      }
+      // Barcha tasdiqlangan/to'langan buyurtmalar (Telegram, yetkazib berish va ZAL/POS) to'g'ridan-to'g'ri Printer Agentga chiqariladi
+      this.ordersGateway.emitPrintOrder(savedOrder, savedOrder.paymentMethod === 'CASH')
     } else {
       // Notify customer privately in Telegram bot that order is received
       this.botService.notifyUserOrderCreated(savedOrder)
@@ -452,5 +449,11 @@ export class OrdersService {
     })
     if (!order) throw new NotFoundException("Buyurtma topilmadi")
     return order
+  }
+
+  async printOrder(id: string, openDrawer: boolean = false) {
+    const order = await this.getOrderById(id)
+    this.ordersGateway.emitPrintOrder(order, openDrawer)
+    return { success: true, message: `Buyurtma #${order.orderNumber} printer agentga yuborildi` }
   }
 }

@@ -59,4 +59,9 @@ export class OrdersController {
   async dispatchYandexTaxi(@Param("id") id: string) {
     return this.ordersService.dispatchYandexTaxi(id)
   }
+
+  @Post(":id/print")
+  async printOrder(@Param("id") id: string, @Body() body?: { openDrawer?: boolean }) {
+    return this.ordersService.printOrder(id, body?.openDrawer)
+  }
 }
