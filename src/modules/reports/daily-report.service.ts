@@ -5,18 +5,13 @@ import { Order } from "../../entities/order.entity"
 import { OrderItem } from "../../entities/order-item.entity"
 import { BotService } from "../bot/bot.service"
 
-interface TashkentDateInfo {
-  year: number
-  month: number
-  day: number
-  hour: number
-  minute: number
-  second: number
-  dateStr: string
-  displayDate: string
-  dayName: string
-  startOfDayUtc: Date
-  endOfDayUtc: Date
+export interface ShiftInfo {
+  baseDateStr: string // "2026-10-31" (smena ochilgan sana)
+  displayShift: string // "31.10.2026 (05:00) — 01.11.2026 (05:00)"
+  displayDate: string // "31.10.2026"
+  dayName: string // "Shanba"
+  startUtc: Date // Smena boshlanishi (UTC)
+  endUtc: Date // Smena tugashi (UTC)
 }
 
 @Injectable()
@@ -32,7 +27,7 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    this.logger.log("🕒 DailyReportService ishga tushdi (Toshkent vaqti bilan har kuni 23:59 da hisobot)")
+    this.logger.log("🕒 DailyReportService ishga tushdi (Toshkent vaqti bilan har kuni ertalab 05:00 da hisobot)")
     // Har 30 soniyada tekshirib turadigan yengil taymer (1GB RAM ga to'liq mos)
     this.schedulerTimer = setInterval(() => {
       this.checkScheduledTrigger().catch((err) => {
@@ -51,7 +46,7 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
   /**
    * Toshkent vaqtini (UTC+5 / Asia/Tashkent) aniq hisoblovchi yordamchi funksiya
    */
-  getTashkentDateInfo(date: Date = new Date()): TashkentDateInfo {
+  getTashkentCurrentInfo(date: Date = new Date()) {
     const dtf = new Intl.DateTimeFormat("en-GB", {
       timeZone: "Asia/Tashkent",
       year: "numeric",
@@ -79,14 +74,6 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
     const dateStr = `${mapping.year}-${mapping.month}-${mapping.day}`
     const displayDate = `${mapping.day}.${mapping.month}.${mapping.year}`
 
-    // Toshkent 00:00:00 -> UTC 19:00:00 (oldingi kun)
-    const startOfDayUtc = new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - 5 * 3600 * 1000)
-    const endOfDayUtc = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999) - 5 * 3600 * 1000)
-
-    const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
-    const weekDays = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"]
-    const dayName = weekDays[d.getUTCDay()]
-
     return {
       year,
       month,
@@ -96,48 +83,85 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
       second,
       dateStr,
       displayDate,
-      dayName,
-      startOfDayUtc,
-      endOfDayUtc,
     }
   }
 
   /**
-   * Har 30 soniyada soat 23:59 bo'lganini tekshirish
+   * Yakunlangan 24-soatlik smena (05:00 dan 05:00 gacha) ma'lumotlarini olish
+   * Ertalab soat 05:00 da hisobot chiqarilganda, kechagi kun 05:00 dan bugungi kun 05:00 gacha
+   * bo'lgan smena hisoboti olinadi.
+   */
+  getCompletedShiftInfo(now: Date = new Date()): ShiftInfo {
+    const cur = this.getTashkentCurrentInfo(now)
+
+    // Agar hozir soat 05:00 yoki undan keyin bo'lsa, yakunlangan smena kechagi kunga tegishli (day - 1)
+    // Agar hozir 05:00 dan oldin bo'lsa (masalan 04:30), yakunlangan smena undan oldingi kunga tegishli
+    const shiftBase = new Date(Date.UTC(cur.year, cur.month - 1, cur.hour >= 5 ? cur.day - 1 : cur.day - 2))
+    const bY = shiftBase.getUTCFullYear()
+    const bM = shiftBase.getUTCMonth()
+    const bD = shiftBase.getUTCDate()
+
+    // Toshkentda 05:00:00 (UTC+5) = UTC da 00:00:00
+    // Toshkentda ertasi kuni 04:59:59.999 (UTC+5) = UTC da 23:59:59.999
+    const startUtc = new Date(Date.UTC(bY, bM, bD, 0, 0, 0))
+    const endUtc = new Date(Date.UTC(bY, bM, bD, 23, 59, 59, 999))
+
+    const nextDate = new Date(shiftBase.getTime() + 24 * 3600 * 1000)
+    const pad = (n: number) => String(n).padStart(2, "0")
+
+    const baseDateStr = `${bY}-${pad(bM + 1)}-${pad(bD)}`
+    const displayDate = `${pad(bD)}.${pad(bM + 1)}.${bY}`
+    const displayShift = `${pad(bD)}.${pad(bM + 1)}.${bY} (05:00) — ${pad(nextDate.getUTCDate())}.${pad(nextDate.getUTCMonth() + 1)}.${nextDate.getUTCFullYear()} (05:00)`
+
+    const weekDays = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"]
+    const dayName = weekDays[shiftBase.getUTCDay()]
+
+    return {
+      baseDateStr,
+      displayShift,
+      displayDate,
+      dayName,
+      startUtc,
+      endUtc,
+    }
+  }
+
+  /**
+   * Har 30 soniyada soat 05:00 (Toshkent vaqti) bo'lganini tekshirish
    */
   private async checkScheduledTrigger() {
-    const info = this.getTashkentDateInfo()
+    const cur = this.getTashkentCurrentInfo()
 
-    // Aynan 23:59 da va bugun hali yuborilmagan bo'lsa
-    if (info.hour === 23 && info.minute === 59) {
-      if (this.lastSentDateStr !== info.dateStr) {
-        this.lastSentDateStr = info.dateStr
-        this.logger.log(`⏰ Soat 23:59 (Toshkent vaqti) bo'ldi! Kunlik hisobot generatsiya qilinmoqda (${info.dateStr})...`)
-        await this.generateAndSendDailyReport(info)
+    // Aynan 05:00 da (05:00 yoki 05:01 oralig'ida) va bugun hali yuborilmagan bo'lsa
+    if (cur.hour === 5 && (cur.minute === 0 || cur.minute === 1)) {
+      if (this.lastSentDateStr !== cur.dateStr) {
+        this.lastSentDateStr = cur.dateStr
+        this.logger.log(`⏰ Soat 05:00 (Toshkent vaqti) bo'ldi! Yakunlangan 24-soatlik smena hisoboti generatsiya qilinmoqda (${cur.dateStr})...`)
+        await this.generateAndSendDailyReport()
       }
     }
   }
 
   /**
-   * Kunlik hisobotni shakllantirish va Telegram guruhga yuborish
+   * Kunlik smena hisobotini shakllantirish va Telegram guruhga yuborish
    */
-  async generateAndSendDailyReport(dateInfo?: TashkentDateInfo): Promise<{ ok: boolean; message: string }> {
-    const info = dateInfo || this.getTashkentDateInfo()
+  async generateAndSendDailyReport(customShift?: ShiftInfo): Promise<{ ok: boolean; message: string }> {
+    const shift = customShift || this.getCompletedShiftInfo()
 
     try {
       const orders = await this.orderRepo.find({
         where: {
-          createdAt: Between(info.startOfDayUtc, info.endOfDayUtc),
+          createdAt: Between(shift.startUtc, shift.endUtc),
         },
         relations: ["items"],
         order: { createdAt: "ASC" },
       })
 
-      const reportHtml = this.formatDailyReportHtml(orders, info)
+      const reportHtml = this.formatDailyReportHtml(orders, shift)
       await this.botService.sendDailyReportNotification(reportHtml)
 
-      this.logger.log(`✅ ${info.displayDate} kunlik savdo hisoboti Telegram guruhga muvaffaqiyatli yuborildi!`)
-      return { ok: true, message: `${info.displayDate} hisoboti guruhga yuborildi` }
+      this.logger.log(`✅ ${shift.displayShift} kunlik savdo hisoboti Telegram guruhga muvaffaqiyatli yuborildi!`)
+      return { ok: true, message: `${shift.displayShift} hisoboti guruhga yuborildi` }
     } catch (err) {
       this.logger.error(`❌ Kunlik hisobot yuborishda xatolik: ${err}`)
       return { ok: false, message: `Xatolik yuz berdi: ${err}` }
@@ -145,9 +169,9 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Savdo statistikasi matnini chiroyli HTML formatida tuzish
+   * Savdo statistikasi matnini chiroyli HTML formatida tuzish (05:00 — 05:00 smena)
    */
-  formatDailyReportHtml(orders: Order[], info: TashkentDateInfo): string {
+  formatDailyReportHtml(orders: Order[], shift: ShiftInfo): string {
     // 1. To'langan yoki yakunlangan haqiqiy savdo buyurtmalari
     const validOrders = orders.filter(
       (o) => o.paymentStatus === "PAID" || o.status === "COMPLETED"
@@ -156,16 +180,17 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
     // Bekor qilingan buyurtmalar
     const cancelledOrders = orders.filter((o) => o.status === "CANCELLED")
 
-    // AGAR KUNDA SAVDO BO'LMAGAN BO'LSA:
+    // AGAR SMENADA SAVDO BO'LMAGAN BO'LSA:
     if (validOrders.length === 0) {
       return (
         `📊 <b>FULL FOOD — KUNLIK SAVDO HISOBOTI</b>\n` +
-        `📅 <b>Sana:</b> ${info.displayDate} (${info.dayName})\n` +
+        `📅 <b>Sana:</b> ${shift.displayShift}\n` +
+        `⏰ <b>Smena:</b> ${shift.dayName} (05:00 — 05:00)\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `Bugun restoranda hech qanday savdo yoki buyurtma qayd etilmadi.\n` +
+        `Ushbu smenada hech qanday savdo yoki buyurtma qayd etilmadi.\n` +
         (cancelledOrders.length > 0 ? `\n❌ <i>Bekor qilingan buyurtmalar: ${cancelledOrders.length} ta</i>\n` : "") +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `<i>Tizim avtomatik hisoboti • 23:59</i>`
+        `<i>Tizim avtomatik hisoboti • 05:00</i>`
       )
     }
 
@@ -223,7 +248,8 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
     // 6. Matnni yig'ish
     let report =
       `📊 <b>FULL FOOD — KUNLIK SAVDO HISOBOTI</b>\n` +
-      `📅 <b>Sana:</b> ${info.displayDate} (${info.dayName})\n` +
+      `📅 <b>Sana:</b> ${shift.displayShift}\n` +
+      `⏰ <b>Smena:</b> ${shift.dayName} (05:00 — 05:00)\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `💰 <b>Jami tushum:</b> <b>${totalRevenue.toLocaleString()} so'm</b>\n` +
       `📦 <b>Jami buyurtmalar:</b> <b>${validOrders.length} ta</b>\n` +
@@ -250,7 +276,7 @@ export class DailyReportService implements OnModuleInit, OnModuleDestroy {
 
     report +=
       `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `<i>Tizim avtomatik hisoboti • 23:59</i>`
+      `<i>Tizim avtomatik hisoboti • 05:00</i>`
 
     return report
   }

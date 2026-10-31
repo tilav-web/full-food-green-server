@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
-import { Repository, Between, MoreThanOrEqual } from "typeorm"
+import { Repository } from "typeorm"
 import { Order } from "../../entities/order.entity"
 import { OrderItem } from "../../entities/order-item.entity"
 import { Product } from "../../entities/product.entity"
@@ -13,40 +13,122 @@ export class ReportsService {
     @InjectRepository(Product) private productRepo: Repository<Product>
   ) {}
 
-  async getDashboardSummary(period: string = "today", startDateStr?: string, endDateStr?: string) {
+  /**
+   * Toshkent vaqti (UTC+5) bo'yicha 05:00 dan 05:00 gacha bo'lgan smena oraliqlarini hisoblash
+   */
+  getShiftRange(period: string = "today", startDateStr?: string, endDateStr?: string): {
+    start: Date
+    end: Date
+    shiftLabel: string
+  } {
     const now = new Date()
+    const dtf = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Tashkent",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+    const parts: Record<string, string> = {}
+    dtf.formatToParts(now).forEach((p) => {
+      parts[p.type] = p.value
+    })
+
+    const tYear = parseInt(parts.year, 10)
+    const tMonth = parseInt(parts.month, 10)
+    const tDay = parseInt(parts.day, 10)
+    const tHour = parseInt(parts.hour, 10)
+
+    // Agar Toshkentda soat 05:00 dan oldin bo'lsa (00:00 - 04:59), hozirgi aktiv smena kechagi kunga tegishli
+    // Agar soat 05:00 yoki undan keyin bo'lsa, hozirgi aktiv smena bugungi kunga tegishli
+    const currentShiftBase = new Date(Date.UTC(tYear, tMonth - 1, tHour >= 5 ? tDay : tDay - 1))
+
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const formatShiftLabel = (bDate: Date) => {
+      const nextDate = new Date(bDate.getTime() + 24 * 3600 * 1000)
+      const d1 = `${pad(bDate.getUTCDate())}.${pad(bDate.getUTCMonth() + 1)}`
+      const d2 = `${pad(nextDate.getUTCDate())}.${pad(nextDate.getUTCMonth() + 1)}`
+      return `${d1} (05:00) — ${d2} (05:00)`
+    }
+
     let start: Date
-    let end: Date = new Date(now)
-    end.setHours(23, 59, 59, 999)
+    let end: Date
+    let shiftLabel: string
 
     if (period === "today") {
-      start = new Date(now)
-      start.setHours(0, 0, 0, 0)
-    } else if (period === "yesterday") {
-      start = new Date(now)
-      start.setDate(start.getDate() - 1)
-      start.setHours(0, 0, 0, 0)
+      const bY = currentShiftBase.getUTCFullYear()
+      const bM = currentShiftBase.getUTCMonth()
+      const bD = currentShiftBase.getUTCDate()
 
-      end = new Date(now)
-      end.setDate(end.getDate() - 1)
-      end.setHours(23, 59, 59, 999)
+      start = new Date(Date.UTC(bY, bM, bD, 0, 0, 0))
+      end = new Date(Date.UTC(bY, bM, bD, 23, 59, 59, 999))
+      shiftLabel = formatShiftLabel(currentShiftBase)
+    } else if (period === "yesterday") {
+      const prevShiftBase = new Date(currentShiftBase.getTime() - 24 * 3600 * 1000)
+      const bY = prevShiftBase.getUTCFullYear()
+      const bM = prevShiftBase.getUTCMonth()
+      const bD = prevShiftBase.getUTCDate()
+
+      start = new Date(Date.UTC(bY, bM, bD, 0, 0, 0))
+      end = new Date(Date.UTC(bY, bM, bD, 23, 59, 59, 999))
+      shiftLabel = formatShiftLabel(prevShiftBase)
     } else if (period === "week") {
-      start = new Date(now)
-      start.setDate(start.getDate() - 7)
-      start.setHours(0, 0, 0, 0)
+      const weekStartBase = new Date(currentShiftBase.getTime() - 6 * 24 * 3600 * 1000)
+      const sY = weekStartBase.getUTCFullYear()
+      const sM = weekStartBase.getUTCMonth()
+      const sD = weekStartBase.getUTCDate()
+
+      const eY = currentShiftBase.getUTCFullYear()
+      const eM = currentShiftBase.getUTCMonth()
+      const eD = currentShiftBase.getUTCDate()
+
+      start = new Date(Date.UTC(sY, sM, sD, 0, 0, 0))
+      end = new Date(Date.UTC(eY, eM, eD, 23, 59, 59, 999))
+
+      const nextDate = new Date(currentShiftBase.getTime() + 24 * 3600 * 1000)
+      shiftLabel = `${pad(sD)}.${pad(sM + 1)} (05:00) — ${pad(nextDate.getUTCDate())}.${pad(nextDate.getUTCMonth() + 1)} (05:00)`
     } else if (period === "month") {
-      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+      const bY = currentShiftBase.getUTCFullYear()
+      const bM = currentShiftBase.getUTCMonth()
+      const bD = currentShiftBase.getUTCDate()
+
+      start = new Date(Date.UTC(bY, bM, 1, 0, 0, 0))
+      end = new Date(Date.UTC(bY, bM, bD, 23, 59, 59, 999))
+
+      const nextDate = new Date(currentShiftBase.getTime() + 24 * 3600 * 1000)
+      shiftLabel = `01.${pad(bM + 1)} (05:00) — ${pad(nextDate.getUTCDate())}.${pad(nextDate.getUTCMonth() + 1)} (05:00)`
     } else if (period === "custom" && startDateStr) {
-      start = new Date(startDateStr)
-      start.setHours(0, 0, 0, 0)
+      const [sY, sM, sD] = startDateStr.split("-").map((v) => parseInt(v, 10))
+      start = new Date(Date.UTC(sY, sM - 1, sD, 0, 0, 0))
+
       if (endDateStr) {
-        end = new Date(endDateStr)
-        end.setHours(23, 59, 59, 999)
+        const [eY, eM, eD] = endDateStr.split("-").map((v) => parseInt(v, 10))
+        end = new Date(Date.UTC(eY, eM - 1, eD, 23, 59, 59, 999))
+        const endNext = new Date(Date.UTC(eY, eM - 1, eD + 1))
+        shiftLabel = `${pad(sD)}.${pad(sM)} (05:00) — ${pad(endNext.getUTCDate())}.${pad(endNext.getUTCMonth() + 1)} (05:00)`
+      } else {
+        end = new Date(Date.UTC(sY, sM - 1, sD, 23, 59, 59, 999))
+        const endNext = new Date(Date.UTC(sY, sM - 1, sD + 1))
+        shiftLabel = `${pad(sD)}.${pad(sM)} (05:00) — ${pad(endNext.getUTCDate())}.${pad(endNext.getUTCMonth() + 1)} (05:00)`
       }
     } else {
       // "all"
-      start = new Date(2020, 0, 1)
+      start = new Date(Date.UTC(2020, 0, 1, 0, 0, 0))
+      const bY = currentShiftBase.getUTCFullYear()
+      const bM = currentShiftBase.getUTCMonth()
+      const bD = currentShiftBase.getUTCDate()
+      end = new Date(Date.UTC(bY, bM, bD, 23, 59, 59, 999))
+      shiftLabel = "Barcha davr"
     }
+
+    return { start, end, shiftLabel }
+  }
+
+  async getDashboardSummary(period: string = "today", startDateStr?: string, endDateStr?: string) {
+    const { start, end, shiftLabel } = this.getShiftRange(period, startDateStr, endDateStr)
 
     // Fetch all orders with items for financial & profit calculations
     const allOrders = await this.orderRepo.find({
@@ -177,6 +259,7 @@ export class ReportsService {
 
     return {
       period,
+      shiftLabel,
       startDate: start.toISOString(),
       endDate: end.toISOString(),
       revenue: periodRevenue,

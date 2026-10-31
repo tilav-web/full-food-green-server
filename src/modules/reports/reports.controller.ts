@@ -1,9 +1,13 @@
-import { Controller, Get, Query } from "@nestjs/common"
+import { Controller, Get, Post, Query } from "@nestjs/common"
 import { ReportsService } from "./reports.service"
+import { DailyReportService } from "./daily-report.service"
 
 @Controller("reports")
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly dailyReportService: DailyReportService
+  ) {}
 
   @Get("dashboard")
   async getDashboard(
@@ -12,5 +16,15 @@ export class ReportsController {
     @Query("endDate") endDate?: string
   ) {
     return this.reportsService.getDashboardSummary(period || "today", startDate, endDate)
+  }
+
+  @Post("send-daily-report")
+  async sendDailyReport() {
+    return this.dailyReportService.generateAndSendDailyReport()
+  }
+
+  @Get("send-daily-report")
+  async triggerDailyReport() {
+    return this.dailyReportService.generateAndSendDailyReport()
   }
 }
