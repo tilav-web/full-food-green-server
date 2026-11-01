@@ -94,6 +94,7 @@ export class AuthService {
         fullName: user.fullName,
         phone: user.phone,
         role: user.role,
+        balance: Number(user.balance || 0),
       },
     }
   }
@@ -120,6 +121,7 @@ export class AuthService {
           fullName: user.fullName,
           phone: user.phone,
           role: user.role,
+          balance: Number(user.balance || 0),
         },
       }
     } catch (e) {
@@ -367,6 +369,7 @@ export class AuthService {
       phone: user.phone,
       role: user.role,
       telegramId: user.telegramId,
+      balance: Number(user.balance || 0),
     }
   }
 }
